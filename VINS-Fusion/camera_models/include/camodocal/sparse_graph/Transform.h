@@ -5,12 +5,10 @@
 #include <eigen3/Eigen/Dense>
 #include <stdint.h>
 
-namespace camodocal
-{
+namespace camodocal {
 
-class Transform
-{
-public:
+class Transform {
+ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     Transform();
@@ -28,11 +26,10 @@ public:
 
     Eigen::Matrix4d toMatrix(void) const;
 
-private:
+ private:
     Eigen::Quaterniond m_q;
     Eigen::Vector3d m_t;
 };
-
 }
 
 #endif

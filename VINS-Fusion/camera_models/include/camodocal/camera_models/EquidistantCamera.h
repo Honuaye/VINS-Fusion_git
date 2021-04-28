@@ -7,26 +7,29 @@
 #include "ceres/rotation.h"
 #include "Camera.h"
 
-namespace camodocal
-{
+namespace camodocal {
 
 /**
  * J. Kannala, and S. Brandt, A Generic Camera Model and Calibration Method
  * for Conventional, Wide-Angle, and Fish-Eye Lenses, PAMI 2006
  */
 
-class EquidistantCamera: public Camera
-{
-public:
-    class Parameters: public Camera::Parameters
-    {
-    public:
+class EquidistantCamera : public Camera {
+ public:
+    class Parameters : public Camera::Parameters {
+     public:
         Parameters();
         Parameters(const std::string& cameraName,
-                   int w, int h,
-                   double k2, double k3, double k4, double k5,
-                   double mu, double mv,
-                   double u0, double v0);
+                   int w,
+                   int h,
+                   double k2,
+                   double k3,
+                   double k4,
+                   double k5,
+                   double mu,
+                   double mv,
+                   double u0,
+                   double v0);
 
         double& k2(void);
         double& k3(void);
@@ -50,9 +53,10 @@ public:
         void writeToYamlFile(const std::string& filename) const;
 
         Parameters& operator=(const Parameters& other);
-        friend std::ostream& operator<< (std::ostream& out, const Parameters& params);
+        friend std::ostream& operator<<(std::ostream& out,
+                                        const Parameters& params);
 
-    private:
+     private:
         // projection
         double m_k2;
         double m_k3;
@@ -71,10 +75,16 @@ public:
     * \brief Constructor from the projection model parameters
     */
     EquidistantCamera(const std::string& cameraName,
-                      int imageWidth, int imageHeight,
-                      double k2, double k3, double k4, double k5,
-                      double mu, double mv,
-                      double u0, double v0);
+                      int imageWidth,
+                      int imageHeight,
+                      double k2,
+                      double k3,
+                      double k4,
+                      double k5,
+                      double mu,
+                      double mv,
+                      double u0,
+                      double v0);
     /**
     * \brief Constructor from the projection model parameters
     */
@@ -85,9 +95,10 @@ public:
     int imageWidth(void) const;
     int imageHeight(void) const;
 
-    void estimateIntrinsics(const cv::Size& boardSize,
-                            const std::vector< std::vector<cv::Point3f> >& objectPoints,
-                            const std::vector< std::vector<cv::Point2f> >& imagePoints);
+    void estimateIntrinsics(
+        const cv::Size& boardSize,
+        const std::vector<std::vector<cv::Point3f> >& objectPoints,
+        const std::vector<std::vector<cv::Point2f> >& imagePoints);
 
     // Lift points from the image plane to the sphere
     virtual void liftSphere(const Eigen::Vector2d& p, Eigen::Vector3d& P) const;
@@ -103,8 +114,9 @@ public:
 
     // Projects 3D points to the image plane (Pi function)
     // and calculates jacobian
-    void spaceToPlane(const Eigen::Vector3d& P, Eigen::Vector2d& p,
-                      Eigen::Matrix<double,2,3>& J) const;
+    void spaceToPlane(const Eigen::Vector3d& P,
+                      Eigen::Vector2d& p,
+                      Eigen::Matrix<double, 2, 3>& J) const;
     //%output p
     //%output J
 
@@ -113,16 +125,24 @@ public:
 
     template <typename T>
     static void spaceToPlane(const T* const params,
-                             const T* const q, const T* const t,
+                             const T* const q,
+                             const T* const t,
                              const Eigen::Matrix<T, 3, 1>& P,
                              Eigen::Matrix<T, 2, 1>& p);
 
-    void initUndistortMap(cv::Mat& map1, cv::Mat& map2, double fScale = 1.0) const;
-    cv::Mat initUndistortRectifyMap(cv::Mat& map1, cv::Mat& map2,
-                                    float fx = -1.0f, float fy = -1.0f,
+    void initUndistortMap(cv::Mat& map1,
+                          cv::Mat& map2,
+                          double fScale = 1.0) const;
+    cv::Mat initUndistortRectifyMap(cv::Mat& map1,
+                                    cv::Mat& map2,
+                                    float fx = -1.0f,
+                                    float fy = -1.0f,
                                     cv::Size imageSize = cv::Size(0, 0),
-                                    float cx = -1.0f, float cy = -1.0f,
-                                    cv::Mat rmat = cv::Mat::eye(3, 3, CV_32F)) const;
+                                    float cx = -1.0f,
+                                    float cy = -1.0f,
+                                    cv::Mat rmat = cv::Mat::eye(3,
+                                                                3,
+                                                                CV_32F)) const;
 
     int parameterCount(void) const;
 
@@ -136,16 +156,18 @@ public:
 
     std::string parametersToString(void) const;
 
-private:
-    template<typename T>
+ private:
+    template <typename T>
     static T r(T k2, T k3, T k4, T k5, T theta);
 
-
-    void fitOddPoly(const std::vector<double>& x, const std::vector<double>& y,
-                    int n, std::vector<double>& coeffs) const;
+    void fitOddPoly(const std::vector<double>& x,
+                    const std::vector<double>& y,
+                    int n,
+                    std::vector<double>& coeffs) const;
 
     void backprojectSymmetric(const Eigen::Vector2d& p_u,
-                              double& theta, double& phi) const;
+                              double& theta,
+                              double& phi) const;
 
     Parameters mParameters;
 
@@ -155,25 +177,22 @@ private:
 typedef boost::shared_ptr<EquidistantCamera> EquidistantCameraPtr;
 typedef boost::shared_ptr<const EquidistantCamera> EquidistantCameraConstPtr;
 
-template<typename T>
-T
-EquidistantCamera::r(T k2, T k3, T k4, T k5, T theta)
-{
+template <typename T>
+T EquidistantCamera::r(T k2, T k3, T k4, T k5, T theta) {
     // k1 = 1
-    return theta +
-           k2 * theta * theta * theta +
+    return theta + k2 * theta * theta * theta +
            k3 * theta * theta * theta * theta * theta +
            k4 * theta * theta * theta * theta * theta * theta * theta +
-           k5 * theta * theta * theta * theta * theta * theta * theta * theta * theta;
+           k5 * theta * theta * theta * theta * theta * theta * theta * theta *
+               theta;
 }
 
 template <typename T>
-void
-EquidistantCamera::spaceToPlane(const T* const params,
-                                const T* const q, const T* const t,
-                                const Eigen::Matrix<T, 3, 1>& P,
-                                Eigen::Matrix<T, 2, 1>& p)
-{
+void EquidistantCamera::spaceToPlane(const T* const params,
+                                     const T* const q,
+                                     const T* const t,
+                                     const Eigen::Matrix<T, 3, 1>& P,
+                                     Eigen::Matrix<T, 2, 1>& p) {
     T P_w[3];
     P_w[0] = T(P(0));
     P_w[1] = T(P(1));
@@ -204,12 +223,12 @@ EquidistantCamera::spaceToPlane(const T* const params,
     T theta = acos(P_c[2] / len);
     T phi = atan2(P_c[1], P_c[0]);
 
-    Eigen::Matrix<T,2,1> p_u = r(k2, k3, k4, k5, theta) * Eigen::Matrix<T,2,1>(cos(phi), sin(phi));
+    Eigen::Matrix<T, 2, 1> p_u =
+        r(k2, k3, k4, k5, theta) * Eigen::Matrix<T, 2, 1>(cos(phi), sin(phi));
 
     p(0) = mu * p_u(0) + u0;
     p(1) = mv * p_u(1) + v0;
 }
-
 }
 
 #endif

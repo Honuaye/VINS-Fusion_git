@@ -6,12 +6,10 @@
 
 #include "camodocal/camera_models/Camera.h"
 
-namespace camodocal
-{
+namespace camodocal {
 
-class CameraFactory
-{
-public:
+class CameraFactory {
+ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     CameraFactory();
 
@@ -23,10 +21,9 @@ public:
 
     CameraPtr generateCameraFromYamlFile(const std::string& filename);
 
-private:
+ private:
     static boost::shared_ptr<CameraFactory> m_instance;
 };
-
 }
 
 #endif

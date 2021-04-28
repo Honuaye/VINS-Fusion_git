@@ -5,12 +5,10 @@
 
 #include "camodocal/camera_models/Camera.h"
 
-namespace camodocal
-{
+namespace camodocal {
 
-class CameraCalibration
-{
-public:
+class CameraCalibration {
+ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     CameraCalibration();
 
@@ -49,17 +47,19 @@ public:
 
     void setVerbose(bool verbose);
 
-private:
+ private:
     bool calibrateHelper(CameraPtr& camera,
-                         std::vector<cv::Mat>& rvecs, std::vector<cv::Mat>& tvecs) const;
+                         std::vector<cv::Mat>& rvecs,
+                         std::vector<cv::Mat>& tvecs) const;
 
     void optimize(CameraPtr& camera,
-                  std::vector<cv::Mat>& rvecs, std::vector<cv::Mat>& tvecs) const;
+                  std::vector<cv::Mat>& rvecs,
+                  std::vector<cv::Mat>& tvecs) const;
 
-    template<typename T>
+    template <typename T>
     void readData(std::ifstream& ifs, T& data) const;
 
-    template<typename T>
+    template <typename T>
     void writeData(std::ofstream& ofs, T data) const;
 
     cv::Size m_boardSize;
@@ -75,7 +75,6 @@ private:
 
     bool m_verbose;
 };
-
 }
 
 #endif
