@@ -54,10 +54,30 @@ class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9> {
 #endif
         Eigen::Map<Eigen::Matrix<double, 15, 1>> residual(residuals);
         residual = pre_integration->evaluate(Pi, Qi, Vi, Bai, Bgi, Pj, Qj, Vj, Baj, Bgj);
+        residual = pre_integration->evaluate(Pi, Qi, Vi, Bai, Bgi, Pj, Qj, Vj,
+                                             Baj, Bgj);
+
+        // pre_integration->covariance 协方差是每次预积分更新(push_back())时候,根据传进来的测量值更新的雅克比矩阵和协方差矩阵
+        // 协方差矩阵的逆矩阵==信息矩阵
+            // 协方差矩阵 P: pre_integration->covariance
+            // 信息矩阵 S: pre_integration->covariance.inverse()
+        // 信息矩阵做LLT分解, S=LLT 取左矩阵:
+            // L: pre_integration->covariance.inverse()).matrixL()
+            // L的转置: pre_integration->covariance.inverse()).matrixL().transpose()
+        // matrixL() :
+            // /** \returns a view of the lower triangular matrix L */
+            // inline typename Traits::MatrixL matrixL() const
+            // {
+            //   eigen_assert(m_isInitialized && "LLT is not initialized.");
+            //   return Traits::getL(m_matrix);
+            // }
         Eigen::Matrix<double, 15, 15> sqrt_info =
             Eigen::LLT<Eigen::Matrix<double, 15, 15>>(
                 pre_integration->covariance.inverse()).matrixL().transpose();
         // sqrt_info.setIdentity();
+        // Ceres 只接受最小二乘优化, 即 d=min(eTe)=(rT)P(-1)r  P(-1)=L(LT)
+        // d = (rT)P(-1)r = (rT)L(LT)r = ((LT)r)T * ((LT)r)
+        // 下面的residual 相当于 (LT)r
         residual = sqrt_info * residual;
 
         if (jacobians) {

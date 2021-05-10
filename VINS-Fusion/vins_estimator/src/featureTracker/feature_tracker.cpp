@@ -119,7 +119,6 @@ FeatureTracker::trackImage(double _cur_time,
                 cv::TermCriteria(
                     cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 30, 0.01),
                 cv::OPTFLOW_USE_INITIAL_FLOW);
-
             int succ_num = 0;
             for (size_t i = 0; i < status.size(); i++) {
                 if (status[i]) succ_num++;
@@ -128,8 +127,10 @@ FeatureTracker::trackImage(double _cur_time,
                 cv::calcOpticalFlowPyrLK(prev_img, cur_img, prev_pts, cur_pts,
                                          status, err, cv::Size(21, 21), 3);
         } else {
+            TicToc t_lk;
             cv::calcOpticalFlowPyrLK(prev_img, cur_img, prev_pts, cur_pts,
                                      status, err, cv::Size(21, 21), 3);
+            std::cout<<"t_lk:  "<<t_lk.toc()<<std::endl;
         }
         // reverse check
         if (FLOW_BACK) {
@@ -173,14 +174,22 @@ FeatureTracker::trackImage(double _cur_time,
         ROS_DEBUG("detect feature begins");
         TicToc t_t;
         int n_max_cnt = MAX_CNT - static_cast<int>(cur_pts.size());
+        int tmp = n_pts.size();
         if (n_max_cnt > 0) {
             if (mask.empty()) cout << "mask is empty " << endl;
             if (mask.type() != CV_8UC1) cout << "mask type wrong " << endl;
             cv::goodFeaturesToTrack(cur_img, n_pts, MAX_CNT - cur_pts.size(),
                                     0.01, MIN_DIST, mask);
-        } else
+        } else {
             n_pts.clear();
+        }
         ROS_DEBUG("detect feature costs: %f ms", t_t.toc());
+        std::cout<< "detect feature: " << t_t.toc()
+            << "  n_pts.size():  " << n_pts.size()
+            << "  tmp: " << tmp
+            << "  cur_pts.size(): " << static_cast<int>(cur_pts.size())
+            << "  prev_pts.size(): " << static_cast<int>(prev_pts.size())
+            <<std::endl;
 
         for (auto &p : n_pts) {
             cur_pts.push_back(p);
@@ -487,7 +496,6 @@ void FeatureTracker::drawTrack(const cv::Mat &imLeft,
     }
     */
     // printf("predict pts size %d \n", (int)predict_pts_debug.size());
-
     // cv::Mat imCur2Compress;
     // cv::resize(imCur2, imCur2Compress, cv::Size(cols, rows / 2));
 }

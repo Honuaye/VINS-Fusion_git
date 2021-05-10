@@ -42,10 +42,8 @@ class IntegrationBase {
         noise.block<3, 3>(3, 3) = (GYR_N * GYR_N) * Eigen::Matrix3d::Identity();
         noise.block<3, 3>(6, 6) = (ACC_N * ACC_N) * Eigen::Matrix3d::Identity();
         noise.block<3, 3>(9, 9) = (GYR_N * GYR_N) * Eigen::Matrix3d::Identity();
-        noise.block<3, 3>(12, 12) =
-            (ACC_W * ACC_W) * Eigen::Matrix3d::Identity();
-        noise.block<3, 3>(15, 15) =
-            (GYR_W * GYR_W) * Eigen::Matrix3d::Identity();
+        noise.block<3, 3>(12, 12) = (ACC_W * ACC_W) * Eigen::Matrix3d::Identity();
+        noise.block<3, 3>(15, 15) = (GYR_W * GYR_W) * Eigen::Matrix3d::Identity();
     }
 
     void push_back(double dt,
@@ -142,7 +140,7 @@ class IntegrationBase {
             F.block<3, 3>(12, 12) = Matrix3d::Identity();
             // cout<<"A"<<endl<<A<<endl;
 
-            MatrixXd V = MatrixXd::Zero(15, 18);
+            Eigen::Matrix<double, 15, 18> V = Eigen::Matrix<double, 15, 18>::Zero();
             V.block<3, 3>(0, 0) = 0.25 * delta_q.toRotationMatrix() * _dt * _dt;
             V.block<3, 3>(0, 3) = 0.25 * -result_delta_q.toRotationMatrix() *
                                   R_a_1_x * _dt * _dt * 0.5 * _dt;
@@ -162,6 +160,13 @@ class IntegrationBase {
             // step_jacobian = F;
             // step_V = V;
             jacobian = F * jacobian;
+            // covariance 第一时刻设置为0
+            // noise 固定不变的测量误差组成的方差
+                // Eigen::Matrix<double, 15, 15> jacobian;
+                // Eigen::Matrix<double, 15, 15> covariance;
+                // Eigen::Matrix<double, 15, 15> step_jacobian;
+                // Eigen::Matrix<double, 15, 18> step_V;
+                // Eigen::Matrix<double, 18, 18> noise;
             covariance =
                 F * covariance * F.transpose() + V * noise * V.transpose();
         }

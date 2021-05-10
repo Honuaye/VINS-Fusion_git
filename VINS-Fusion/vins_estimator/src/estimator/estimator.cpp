@@ -144,6 +144,7 @@ void Estimator::inputImage(double t,
     else
         featureFrame = featureTracker.trackImage(t, _img, _img1);
     // printf("featureTracker time: %f\n", featureTrackerTime.toc());
+    std::cout << "featureTracker total time: " << featureTrackerTime.toc() << std::endl;
 
     if (SHOW_TRACK) {
         cv::Mat imgTrack = featureTracker.getTrackImage();
@@ -284,14 +285,15 @@ void Estimator::processMeasurements() {
 
             }
             mProcess.lock();
+            TicToc process_t;
             processImage(feature.second, feature.first);
+            std::cout << "process total time: " << process_t.toc() << std::endl;
             prevTime = curTime;
             printStatistics(*this, 0);
             std_msgs::Header header;
             header.frame_id = "world";
             header.stamp = ros::Time(feature.first);
-
-            pubOdometry(*this, header);
+             pubOdometry(*this, header);
             pubKeyPoses(*this, header);
             pubCameraPose(*this, header);
             pubPointCloud(*this, header);
@@ -322,6 +324,16 @@ void Estimator::initFirstIMUPose(
     averAcc = averAcc / n;
     printf("averge acc %f %f %f\n", averAcc.x(), averAcc.y(), averAcc.z());
     Matrix3d R0 = Utility::g2R(averAcc);
+        // Eigen::Matrix3d R0;
+        // // g : 平均加速度 a_avert
+        // Eigen::Vector3d ng1 = g.normalized();
+        // Eigen::Vector3d ng2{0, 0, 1.0};
+        // // R0 = ng1.inverse() * ng2; ????
+        // R0 = Eigen::Quaterniond::FromTwoVectors(ng1, ng2).toRotationMatrix();
+        // double yaw = Utility::R2ypr(R0).x();
+        // R0 = Utility::ypr2R(Eigen::Vector3d{-yaw, 0, 0}) * R0;
+        // // R0 = Utility::ypr2R(Eigen::Vector3d{-90, 0, 0}) * R0;
+        // return R0;
     double yaw = Utility::R2ypr(R0).x();
     R0 = Utility::ypr2R(Eigen::Vector3d{-yaw, 0, 0}) * R0;
     Rs[0] = R0;
@@ -391,17 +403,14 @@ void Estimator::processImage(
     double time1, time2, time3;
     if (f_manager.addFeatureCheckParallax(frame_count, image, td)) {
         marginalization_flag = MARGIN_OLD;
-        // printf("keyframe\n");
     } else {
         marginalization_flag = MARGIN_SECOND_NEW;
-        // printf("non-keyframe\n");
     }
     time1 = processImage1.toc();
     ROS_DEBUG("%s", marginalization_flag ? "Non-keyframe" : "Keyframe");
     ROS_DEBUG("Solving %d", frame_count);
     ROS_DEBUG("number of feature: %d", f_manager.getFeatureCount());
     Headers[frame_count] = header;
-
     ImageFrame imageframe(image, header);
     imageframe.pre_integration = tmp_pre_integration;
     all_image_frame.insert(make_pair(header, imageframe));
@@ -451,7 +460,6 @@ void Estimator::processImage(
                     slideWindow();
             }
         }
-
         // stereo + IMU initilization
         if (STEREO && USE_IMU) {
             printf("Start Init ----------------\n");
@@ -503,14 +511,21 @@ void Estimator::processImage(
             Bgs[frame_count] = Bgs[prev_frame];
         }
 
-    } else {
+    }
+    else
+    {
         TicToc t_solve;
+        // 初始化当前帧的位姿
         if (!USE_IMU)
             f_manager.initFramePoseByPnP(frame_count, Ps, Rs, tic, ric);
+        // 三角化特征点深度
         f_manager.triangulate(frame_count, Ps, Rs, tic, ric);
+        // 优化滑动窗口内 PVQBD
         optimization();
+        // 根据 ×× 进行异常特征点剔除
         set<int> removeIndex;
         outliersRejection(removeIndex);
+        cout<<"removeIndex: "<<removeIndex.size()<<endl;
         f_manager.removeOutlier(removeIndex);
         if (!MULTIPLE_THREAD) {
             featureTracker.removeOutliers(removeIndex);
@@ -526,12 +541,12 @@ void Estimator::processImage(
             return;
         }
         printData();
+        TicToc t_slideWindow;
         slideWindow();
         f_manager.removeFailures();
         // prepare output of VINS
         key_poses.clear();
         for (int i = 0; i <= WINDOW_SIZE; i++) key_poses.push_back(Ps[i]);
-
         last_R = Rs[WINDOW_SIZE];
         last_P = Ps[WINDOW_SIZE];
         last_R0 = Rs[0];
@@ -1481,6 +1496,7 @@ double Estimator::reprojectionError(Matrix3d &Ri,
 void Estimator::outliersRejection(set<int> &removeIndex) {
     // return;
     int feature_index = -1;
+    cout<<"FOCAL_LENGTH: "<<FOCAL_LENGTH<<endl;
     for (auto &it_per_id : f_manager.feature) {
         double err = 0;
         int errCnt = 0;
@@ -1522,9 +1538,12 @@ void Estimator::outliersRejection(set<int> &removeIndex) {
             }
         }
         double ave_err = err / errCnt;
-        if (ave_err * FOCAL_LENGTH > 3)
+        cout<<"(it_per_id.id:  "<<it_per_id.feature_id<<", ave_err = "<<ave_err * FOCAL_LENGTH / 1.5<<")  ";
+        if (ave_err * FOCAL_LENGTH > 3) {
             removeIndex.insert(it_per_id.feature_id);
+        }
     }
+    cout<<endl;
 }
 
 void Estimator::fastPredictIMU(double t,
@@ -1544,6 +1563,12 @@ void Estimator::fastPredictIMU(double t,
     latest_gyr_0 = angular_velocity;
 }
 
+
+// 每次后端优化完了之后更新 更新 latest_state,
+// 因为这里也会调用fastPredictIMU取预测最新的IMU姿态， 因此和 inputIMU 之间需要锁来保护
+// 这里占用这锁的同时不影响那边喂入数据给 accBuf ； 这里获取accBuf 通过锁mBuf保护
+// IMU 频率的姿态： latest_P 
+    // 1. 这这里使用CERES优化后的姿态更新 latest_P  latest_time (会因为图像的更新慢，导致这里参考的时间回退一下)
 void Estimator::updateLatestStates() {
     mPropagate.lock();
     latest_time = Headers[frame_count] + td;

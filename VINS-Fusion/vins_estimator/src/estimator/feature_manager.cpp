@@ -26,6 +26,15 @@ void FeatureManager::setRic(Matrix3d _ric[]) {
 
 void FeatureManager::clearState() { feature.clear(); }
 
+// 跟4相关的:
+// getFeatureCount()
+// setDepth()
+// getDepthVector()
+// triangulate()
+
+// solvePoseByPnP()  PNP选的算法相关
+
+// 至少四次
 int FeatureManager::getFeatureCount() {
     int cnt = 0;
     for (auto &it : feature) {
@@ -123,6 +132,7 @@ vector<pair<Vector3d, Vector3d>> FeatureManager::getCorresponding(
     return corres;
 }
 
+// 优化之后设置优化后的深度, 需要和getDepthVector获得的特征点保持一致
 void FeatureManager::setDepth(const VectorXd &x) {
     int feature_index = -1;
     for (auto &it_per_id : feature) {
@@ -152,6 +162,7 @@ void FeatureManager::clearDepth() {
     for (auto &it_per_id : feature) it_per_id.estimated_depth = -1;
 }
 
+// 只返回被观测到至少3次的特征点(去做优化)
 VectorXd FeatureManager::getDepthVector() {
     VectorXd dep_vec(getFeatureCount());
     int feature_index = -1;
@@ -197,6 +208,7 @@ bool FeatureManager::solvePoseByPnP(Eigen::Matrix3d &R,
     P_initial = -(R_initial * P);
 
     // printf("pnp size %d \n",(int)pts2D.size() );
+    // cv::solvePnP 要求, 输入点数 >= 3 才能做PNP
     if (int(pts2D.size()) < 4) {
         printf(
             "feature tracking not enough, please slowly move you device! \n");
@@ -284,6 +296,8 @@ void FeatureManager::initFramePoseByPnP(int frameCnt,
     std::cout<<"initFramePoseByPnP Finish :  "<<frameCnt<<std::endl;
 }
 
+// 使用次数小于4的都不做三角化
+// if (it_per_id.used_num < 4) continue;
 void FeatureManager::triangulate(int frameCnt,
                                  Vector3d Ps[],
                                  Matrix3d Rs[],
@@ -308,6 +322,7 @@ void FeatureManager::triangulate(int frameCnt,
             rightPose.rightCols<1>() = -R1.transpose() * t1;
             // cout << "right pose " << rightPose << endl;
 
+            //左 右 相机的归一化坐标
             Eigen::Vector2d point0, point1;
             Eigen::Vector3d point3d;
             point0 = it_per_id.feature_per_frame[0].point.head(2);
@@ -332,7 +347,9 @@ void FeatureManager::triangulate(int frameCnt,
             ptsGt.y(), ptsGt.z());
             */
             continue;
-        } else if (it_per_id.feature_per_frame.size() > 1) {
+        }
+        else
+        if (it_per_id.feature_per_frame.size() > 1) {
             int imu_i = it_per_id.start_frame;
             Eigen::Matrix<double, 3, 4> leftPose;
             Eigen::Vector3d t0 = Ps[imu_i] + Rs[imu_i] * tic[0];
