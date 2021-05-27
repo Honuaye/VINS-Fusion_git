@@ -453,7 +453,7 @@ PinholeCamera::liftProjective(const Eigen::Vector2d& p, Eigen::Vector3d& P) cons
     double rho2_d, rho4_d, radDist_d, Dx_d, Dy_d, inv_denom_d;
     //double lambda;
 
-    // Lift points to normalised plane
+    // Lift points to normalised plane 归一化坐标 X/Z Y/Z
     mx_d = m_inv_K11 * p(0) + m_inv_K13;
     my_d = m_inv_K22 * p(1) + m_inv_K23;
 
@@ -470,7 +470,6 @@ PinholeCamera::liftProjective(const Eigen::Vector2d& p, Eigen::Vector3d& P) cons
             double k2 = mParameters.k2();
             double p1 = mParameters.p1();
             double p2 = mParameters.p2();
-
             // Apply inverse distortion model
             // proposed by Heikkila
             mx2_d = mx_d*mx_d;

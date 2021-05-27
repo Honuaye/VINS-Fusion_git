@@ -11,19 +11,21 @@
  *******************************************************/
 
 #pragma once
-#include <eigen3/Eigen/Dense>
 #include <iostream>
-#include "../factor/imu_factor.h"
-#include "../utility/utility.h"
 #include <ros/ros.h>
 #include <map>
+#include <eigen3/Eigen/Dense>
+
+#include "../utility/utility.h"
 #include "../estimator/feature_manager.h"
+#include "../factor/integration_base.h"
 
 using namespace Eigen;
 using namespace std;
 
 class ImageFrame {
  public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     ImageFrame(){};
     ImageFrame(
         const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &_points,
@@ -40,7 +42,3 @@ class ImageFrame {
 };
 void solveGyroscopeBias(map<double, ImageFrame> &all_image_frame,
                         Vector3d *Bgs);
-bool VisualIMUAlignment(map<double, ImageFrame> &all_image_frame,
-                        Vector3d *Bgs,
-                        Vector3d &g,
-                        VectorXd &x);

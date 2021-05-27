@@ -161,7 +161,7 @@ FeatureTracker::trackImage(double _cur_time,
     for (auto &n : track_cnt) n++;
 
     if (1) {
-        // rejectWithF();
+        rejectWithF();
         ROS_DEBUG("set mask begins");
         TicToc t_m;
         setMask();
@@ -187,6 +187,7 @@ FeatureTracker::trackImage(double _cur_time,
         // printf("feature cnt after add %d\n", (int)ids.size());
     }
 
+    // 去畸变之后的归一化坐标
     cur_un_pts = undistortedPts(cur_pts, m_camera[0]);
     pts_velocity =
         ptsVelocity(ids, cur_un_pts, cur_un_pts_map, prev_un_pts_map);
@@ -445,7 +446,9 @@ void FeatureTracker::drawTrack(const cv::Mat &imLeft,
 
     for (size_t j = 0; j < curLeftPts.size(); j++) {
         double len = std::min(1.0, 1.0 * track_cnt[j] / 20);
-        cv::circle(imTrack, curLeftPts[j], 2,
+        auto tmp = curLeftPts[j];
+        tmp.x = 0.0;
+        cv::circle(imTrack, tmp, 2,
                    cv::Scalar(255 * (1 - len), 0, 255 * len), 2);
     }
     if (!imRight.empty() && stereo_cam) {

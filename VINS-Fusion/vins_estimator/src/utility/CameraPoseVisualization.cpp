@@ -27,7 +27,7 @@ const Eigen::Vector3d CameraPoseVisualization::lt2 =
 const Eigen::Vector3d CameraPoseVisualization::oc =
     Eigen::Vector3d(0.0, 0.0, 0.0);
 
-void Eigen2Point(const Eigen::Vector3d& v, geometry_msgs::Point& p) {
+void Eigen2Point(const Eigen::Vector3d &v, geometry_msgs::Point &p) {
     p.x = v.x();
     p.y = v.y();
     p.z = v.z();
@@ -72,8 +72,8 @@ void CameraPoseVisualization::setScale(double s) { m_scale = s; }
 void CameraPoseVisualization::setLineWidth(double width) {
     m_line_width = width;
 }
-void CameraPoseVisualization::add_edge(const Eigen::Vector3d& p0,
-                                       const Eigen::Vector3d& p1) {
+void CameraPoseVisualization::add_edge(const Eigen::Vector3d &p0,
+                                       const Eigen::Vector3d &p1) {
     visualization_msgs::Marker marker;
 
     marker.ns = m_marker_ns;
@@ -96,8 +96,8 @@ void CameraPoseVisualization::add_edge(const Eigen::Vector3d& p0,
     m_markers.push_back(marker);
 }
 
-void CameraPoseVisualization::add_loopedge(const Eigen::Vector3d& p0,
-                                           const Eigen::Vector3d& p1) {
+void CameraPoseVisualization::add_loopedge(const Eigen::Vector3d &p0,
+                                           const Eigen::Vector3d &p1) {
     visualization_msgs::Marker marker;
 
     marker.ns = m_marker_ns;
@@ -122,8 +122,8 @@ void CameraPoseVisualization::add_loopedge(const Eigen::Vector3d& p0,
     m_markers.push_back(marker);
 }
 
-void CameraPoseVisualization::add_pose(const Eigen::Vector3d& p,
-                                       const Eigen::Quaterniond& q) {
+void CameraPoseVisualization::add_pose(const Eigen::Vector3d &p,
+                                       const Eigen::Quaterniond &q) {
     visualization_msgs::Marker marker;
 
     marker.ns = m_marker_ns;
@@ -210,11 +210,11 @@ void CameraPoseVisualization::add_pose(const Eigen::Vector3d& p,
 
 void CameraPoseVisualization::reset() { m_markers.clear(); }
 
-void CameraPoseVisualization::publish_by(ros::Publisher& pub,
-                                         const std_msgs::Header& header) {
+void CameraPoseVisualization::publish_by(ros::Publisher &pub,
+                                         const std_msgs::Header &header) {
     visualization_msgs::MarkerArray markerArray_msg;
 
-    for (auto& marker : m_markers) {
+    for (auto &marker : m_markers) {
         marker.header = header;
         markerArray_msg.markers.push_back(marker);
     }

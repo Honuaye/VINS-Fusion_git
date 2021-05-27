@@ -30,6 +30,7 @@ int ROLLING_SHUTTER;
 std::string EX_CALIB_RESULT_PATH;
 std::string VINS_RESULT_PATH;
 std::string OUTPUT_FOLDER;
+std::string MY_OUTPUT_FOLDER;
 std::string IMU_TOPIC;
 int ROW, COL;
 double TD;
@@ -46,6 +47,12 @@ int MIN_DIST;
 double F_THRESHOLD;
 int SHOW_TRACK;
 int FLOW_BACK;
+
+/***** GTSAM *****/
+std::vector<std::array<double, 4>> INTRINSICS;
+std::vector<std::vector<double>> DISTORTION_COEFF;
+/***** GTSAM *****/
+
 
 template <typename T>
 T readParam(ros::NodeHandle &n, std::string name) {
@@ -100,6 +107,8 @@ void readParameters(std::string config_file) {
     MIN_PARALLAX = fsSettings["keyframe_parallax"];
     MIN_PARALLAX = MIN_PARALLAX / FOCAL_LENGTH;
 
+    fsSettings["my_output_path"] >> MY_OUTPUT_FOLDER;
+    std::cout << "my result path " << MY_OUTPUT_FOLDER << std::endl;
     fsSettings["output_path"] >> OUTPUT_FOLDER;
     VINS_RESULT_PATH = OUTPUT_FOLDER + "/vio.csv";
     std::cout << "result path " << VINS_RESULT_PATH << std::endl;
@@ -130,11 +139,13 @@ void readParameters(std::string config_file) {
 
     NUM_OF_CAM = fsSettings["num_of_cam"];
     printf("camera number %d\n", NUM_OF_CAM);
-
     if (NUM_OF_CAM != 1 && NUM_OF_CAM != 2) {
         printf("num_of_cam should be 1 or 2\n");
         assert(0);
     }
+    INTRINSICS.resize(NUM_OF_CAM);
+    DISTORTION_COEFF.resize(NUM_OF_CAM);
+
 
     int pn = config_file.find_last_of('/');
     std::string configPath = config_file.substr(0, pn);
@@ -143,6 +154,8 @@ void readParameters(std::string config_file) {
     fsSettings["cam0_calib"] >> cam0Calib;
     std::string cam0Path = configPath + "/" + cam0Calib;
     CAM_NAMES.push_back(cam0Path);
+    int index_0 = 0;
+    readCameraParameters(index_0, cam0Path);
 
     if (NUM_OF_CAM == 2) {
         STEREO = 1;
@@ -151,6 +164,8 @@ void readParameters(std::string config_file) {
         std::string cam1Path = configPath + "/" + cam1Calib;
         // printf("%s cam1 path\n", cam1Path.c_str() );
         CAM_NAMES.push_back(cam1Path);
+        int index_1 = 1;
+        readCameraParameters(index_1, cam1Path);
 
         cv::Mat cv_T;
         fsSettings["body_T_cam1"] >> cv_T;
@@ -184,4 +199,42 @@ void readParameters(std::string config_file) {
     }
 
     fsSettings.release();
+}
+
+void readCameraParameters(const int& index, std::string filename) {
+    cv::FileStorage fs( filename, cv::FileStorage::READ );
+    if ( !fs.isOpened() || fs["model_type"].isNone()) {
+        printf("Error camera.yaml! \n");
+        assert(0);
+        return;
+    }
+    if(INTRINSICS.size() < NUM_OF_CAM || DISTORTION_COEFF.size() < NUM_OF_CAM) {
+        INTRINSICS.resize(NUM_OF_CAM);
+        DISTORTION_COEFF.resize(NUM_OF_CAM);
+    }
+    cv::FileNode n = fs["distortion_parameters"];
+    double m_k1 = static_cast<double>(n["k1"]);
+    double m_k2 = static_cast<double>(n["k2"]);
+    double m_p1 = static_cast<double>(n["p1"]);
+    double m_p2 = static_cast<double>(n["p2"]);
+    std::vector<double> tmp_vec = {m_k1, m_k2, m_p1, m_p2};
+    DISTORTION_COEFF[index] = tmp_vec;
+    n = fs["projection_parameters"];
+    double m_fx = static_cast<double>(n["fx"]);
+    double m_fy = static_cast<double>(n["fy"]);
+    double m_cx = static_cast<double>(n["cx"]);
+    double m_cy = static_cast<double>(n["cy"]);
+    std::array<double, 4> tmp_arr = {m_fx, m_fy, m_cx, m_cy};
+    INTRINSICS[index] = tmp_arr;
+    // cout << "index: " <<  index << endl;
+    // printf("INTRINSICS: ");
+    // for(auto i : INTRINSICS[index]) {
+    //     std::cout<<i<<"  ";
+    // }
+    // printf("\n");
+    // printf("DISTORTION_COEFF: ");
+    // for(auto i : DISTORTION_COEFF[index]) {
+    //     std::cout<<i<<"  ";
+    // }
+    // printf("\n");
 }

@@ -44,6 +44,7 @@ extern int NUM_ITERATIONS;
 extern std::string EX_CALIB_RESULT_PATH;
 extern std::string VINS_RESULT_PATH;
 extern std::string OUTPUT_FOLDER;
+extern std::string MY_OUTPUT_FOLDER;
 extern std::string IMU_TOPIC;
 extern double TD;
 extern int ESTIMATE_TD;
@@ -65,7 +66,14 @@ extern double F_THRESHOLD;
 extern int SHOW_TRACK;
 extern int FLOW_BACK;
 
+/***** GTSAM *****/
+extern std::vector<std::array<double, 4>> INTRINSICS;
+extern std::vector<std::vector<double>> DISTORTION_COEFF;
+/***** GTSAM *****/
+
 void readParameters(std::string config_file);
+
+void readCameraParameters(const int& index, std::string config_file);
 
 enum SIZE_PARAMETERIZATION {
     SIZE_POSE = 7,

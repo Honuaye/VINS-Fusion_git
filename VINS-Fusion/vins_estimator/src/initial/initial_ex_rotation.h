@@ -15,9 +15,7 @@
 #include <vector>
 #include "../estimator/parameters.h"
 using namespace std;
-
 #include <opencv2/opencv.hpp>
-
 #include <eigen3/Eigen/Dense>
 using namespace Eigen;
 #include <ros/console.h>
@@ -26,6 +24,7 @@ using namespace Eigen;
  * when your totally don't konw the extrinsic parameter */
 class InitialEXRotation {
  public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     InitialEXRotation();
     bool CalibrationExRotation(vector<pair<Vector3d, Vector3d>> corres,
                                Quaterniond delta_q_imu,
