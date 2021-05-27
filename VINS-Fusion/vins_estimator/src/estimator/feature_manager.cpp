@@ -134,8 +134,9 @@ void FeatureManager::setDepth(const VectorXd &x) {
         // it_per_id->estimated_depth);
         if (it_per_id.estimated_depth < 0) {
             it_per_id.solve_flag = 2;
-        } else
+        } else {
             it_per_id.solve_flag = 1;
+        }
     }
 }
 
@@ -190,11 +191,9 @@ bool FeatureManager::solvePoseByPnP(Eigen::Matrix3d &R,
                                     vector<cv::Point3f> &pts3D) {
     Eigen::Matrix3d R_initial;
     Eigen::Vector3d P_initial;
-
     // w_T_cam ---> cam_T_w
     R_initial = R.inverse();
     P_initial = -(R_initial * P);
-
     // printf("pnp size %d \n",(int)pts2D.size() );
     if (int(pts2D.size()) < 4) {
         printf(
@@ -241,15 +240,20 @@ void FeatureManager::initFramePoseByPnP(int frameCnt,
             if (it_per_id.estimated_depth > 0) {
                 int index = frameCnt - it_per_id.start_frame;
                 if ((int)it_per_id.feature_per_frame.size() >= index + 1) {
+                    // 图像坐标系下归一化坐标->变换到->IMU body 坐标系下
+                    // Pb = Rbc*Pc + Tbc;
                     Vector3d ptsInCam =
                         ric[0] * (it_per_id.feature_per_frame[0].point *
                                   it_per_id.estimated_depth) +
                         tic[0];
+                    // body 坐标系, 乘以当前姿态, 变换到世界坐标系
+                    // Pw = Rwb * Pb + Twb;
                     Vector3d ptsInWorld = Rs[it_per_id.start_frame] * ptsInCam +
                                           Ps[it_per_id.start_frame];
 
                     cv::Point3f point3d(ptsInWorld.x(), ptsInWorld.y(),
                                         ptsInWorld.z());
+                    // 图像坐标系下的归一化坐标
                     cv::Point2f point2d(
                         it_per_id.feature_per_frame[index].point.x(),
                         it_per_id.feature_per_frame[index].point.y());
@@ -268,7 +272,6 @@ void FeatureManager::initFramePoseByPnP(int frameCnt,
             // trans to w_T_imu
             Rs[frameCnt] = RCam * ric[0].transpose();
             Ps[frameCnt] = -RCam * ric[0].transpose() * tic[0] + PCam;
-
             Eigen::Quaterniond Q(Rs[frameCnt]);
             // cout << "frameCnt: " << frameCnt <<  " pnp Q " << Q.w() << " " <<
             // Q.vec().transpose() << endl;

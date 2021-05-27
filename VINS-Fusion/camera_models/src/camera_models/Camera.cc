@@ -38,6 +38,10 @@ Camera::Parameters::Parameters(ModelType modelType,
 {
     switch (modelType)
     {
+    // Kannala-Brandt Camera Model 号称是一个 generic camera model,适用于
+    // 普通、广角和鱼眼镜头
+    // KB 模型假设图像光心到投影点的距离和角度的多项式存在比例关系，这个角度是点所在的投影光线和主轴之间的夹角
+    // KB 模型有时候被作为真空相机的畸变模型，同时也是opencv中使用的鱼眼相机模型，而在kalibr中，被用作等距畸变模型(equidistant distortion model)
     case KANNALA_BRANDT:
         m_nIntrinsics = 8;
         break;
@@ -47,6 +51,14 @@ Camera::Parameters::Parameters(ModelType modelType,
     case SCARAMUZZA:
         m_nIntrinsics = SCARAMUZZA_CAMERA_NUM_PARAMS;
         break;
+    // MEI : 该模型2007年提出来的，由于 Kannala-Brandt 模型所提出的多项式尽管能建模大部分的投影模型，
+    // 但是扔遵循针孔成像的基本假设，导致该模型存在奇点（水平入射的光线将被投影到无穷远）。MEI 因此被提出当做
+    // 一个更通用的投影模型， MEI 模型将投影成像过程分为四步：
+        // 1. 相机空间坐标系 Cm 下的点投影到单位球面
+        // 2. 求取所投影的单位球面点在偏移坐标系Cp下的坐标
+        // 3. 然后求取该点在Cp下的归一化平面坐标
+        // 4. 最后再将内参数矩阵作用于该归一化平面得到像平面坐标
+        // 可以看出，进过Cp下表达坐标点，可以投影更大范围的点，使得此模型对于鱼眼镜头的适用范围更广
     case MEI:
     default:
         m_nIntrinsics = 9;

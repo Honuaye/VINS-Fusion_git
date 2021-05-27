@@ -14,9 +14,11 @@
 #include <cassert>
 #include <cstring>
 #include <eigen3/Eigen/Dense>
+#include <opencv2/core.hpp>
 
 class Utility {
  public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     template <typename Derived>
     static Eigen::Quaternion<typename Derived::Scalar> deltaQ(
         const Eigen::MatrixBase<Derived> &theta) {
@@ -153,4 +155,43 @@ class Utility {
             return angle_degrees +
                    two_pi * std::floor((-angle_degrees + T(180)) / two_pi);
     };
+
+    static cv::Mat EigenMatrix3d2Mat(const Eigen::Matrix3d &m) {
+        cv::Mat cvMat(3,3,CV_32F);
+        for(int i=0;i<3;i++) {
+            for(int j=0; j<3; j++) {
+                cvMat.at<float>(i,j)=m(i,j);
+            }
+        }
+        return cvMat.clone();
+    }
+    static cv::Mat EigenVector3d2Mat(const Eigen::Vector3d &v) {
+        cv::Mat cvMat(3,1,CV_32F);
+        for(int i=0;i<3;i++) {
+            cvMat.at<float>(i)=v(i);
+        }
+        return cvMat.clone();
+    }
+
+    static bool Normalized2Pixel(const cv::Point2f &n_P, cv::Point2f *P, const Eigen::Matrix3d &K) {
+        const double fx = K(0, 0);
+        const double fy = K(1, 1);
+        const double cx = K(0, 2);
+        const double cy = K(1, 2);
+        P->x = fx * n_P.x + cx;
+        P->y = fy * n_P.y + cy;
+        return true;
+    }
+    static bool Pixel2Normalized(const cv::Point2f &P, cv::Point2f *n_P, const Eigen::Matrix3d &K) {
+        if(K(0, 0) <= 0. || K(1, 1) <= 0.) {
+            return false;
+        }
+        const double inv_fx = 1 / K(0, 0);
+        const double inv_fy = 1 / K(1, 1);
+        const double cx = K(0, 2);
+        const double cy = K(1, 2);
+        n_P->x = inv_fx * (P.x - cx);
+        n_P->y = inv_fy * (P.y - cy);
+        return true;
+    }
 };

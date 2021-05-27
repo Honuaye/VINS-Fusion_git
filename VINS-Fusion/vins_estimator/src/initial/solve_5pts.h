@@ -19,11 +19,11 @@ using namespace std;
 //#include <opencv2/core/eigen.hpp>
 #include <eigen3/Eigen/Dense>
 using namespace Eigen;
-
 #include <ros/console.h>
 
 class MotionEstimator {
  public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     bool solveRelativeRT(const vector<pair<Vector3d, Vector3d>> &corres,
                          Matrix3d &R,
                          Vector3d &T);
