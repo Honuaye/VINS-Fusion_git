@@ -19,6 +19,8 @@
 #include "../utility/tic_toc.h"
 #include "../estimator/parameters.h"
 
+// template <int kNumResiduals, int... Ns>
+// SizedCostFunction 是个模板类, 大小可以根据实际情况填入, 
 class InitialBiasFactor : public ceres::SizedCostFunction<6, 9> {
  public:
     InitialBiasFactor(const Eigen::Vector3d &_Ba, const Eigen::Vector3d &_Bg) {

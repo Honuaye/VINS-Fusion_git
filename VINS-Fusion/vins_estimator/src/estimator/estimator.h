@@ -103,6 +103,8 @@ class Estimator {
     bool IMUAvailable(double t);
     void initFirstIMUPose(vector<pair<double, Eigen::Vector3d>> &accVector);
 
+    void printData(int index = -1);
+
     enum SolverFlag { INITIAL, NON_LINEAR };
 
     enum MarginalizationFlag { MARGIN_OLD = 0, MARGIN_SECOND_NEW = 1 };
@@ -191,4 +193,5 @@ class Estimator {
 
     bool initFirstPoseFlag;
     bool initThreadFlag;
+    int index_ = 0;
 };

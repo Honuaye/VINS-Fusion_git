@@ -43,6 +43,7 @@ bool FeatureManager::addFeatureCheckParallax(
     double td) {
     ROS_DEBUG("input feature: %d", (int)image.size());
     ROS_DEBUG("num of feature: %d", getFeatureCount());
+    std::cout<<"feature.size() = "<<feature.size()<<std::endl;
     double parallax_sum = 0;
     int parallax_num = 0;
     last_track_num = 0;
@@ -234,6 +235,7 @@ void FeatureManager::initFramePoseByPnP(int frameCnt,
                                         Matrix3d Rs[],
                                         Vector3d tic[],
                                         Matrix3d ric[]) {
+    std::cout<<"initFramePoseByPnP  frameCnt :  "<<frameCnt<<std::endl;
     if (frameCnt > 0) {
         vector<cv::Point2f> pts2D;
         vector<cv::Point3f> pts3D;
@@ -263,19 +265,23 @@ void FeatureManager::initFramePoseByPnP(int frameCnt,
         // trans to w_T_cam
         RCam = Rs[frameCnt - 1] * ric[0];
         PCam = Rs[frameCnt - 1] * tic[0] + Ps[frameCnt - 1];
-
+        Eigen::Quaterniond Q1(Rs[frameCnt - 1]);
+        cout << "Before init. pnp Q " << Q1.w() << " " <<
+            Q1.vec().transpose() << endl;
+            cout << "frameCnt: " << frameCnt - 1 << " pnp P " <<
+            Ps[frameCnt - 1].transpose() << endl;
         if (solvePoseByPnP(RCam, PCam, pts2D, pts3D)) {
             // trans to w_T_imu
             Rs[frameCnt] = RCam * ric[0].transpose();
             Ps[frameCnt] = -RCam * ric[0].transpose() * tic[0] + PCam;
-
             Eigen::Quaterniond Q(Rs[frameCnt]);
-            // cout << "frameCnt: " << frameCnt <<  " pnp Q " << Q.w() << " " <<
-            // Q.vec().transpose() << endl;
-            // cout << "frameCnt: " << frameCnt << " pnp P " <<
-            // Ps[frameCnt].transpose() << endl;
+            cout << "frameCnt: " << frameCnt <<  " pnp Q " << Q.w() << " " <<
+            Q.vec().transpose() << endl;
+            cout << "frameCnt: " << frameCnt << " pnp P " <<
+            Ps[frameCnt].transpose() << endl;
         }
     }
+    std::cout<<"initFramePoseByPnP Finish :  "<<frameCnt<<std::endl;
 }
 
 void FeatureManager::triangulate(int frameCnt,

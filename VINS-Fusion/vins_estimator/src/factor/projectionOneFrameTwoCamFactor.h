@@ -28,6 +28,11 @@ class ProjectionOneFrameTwoCamFactor
                                    const Eigen::Vector2d &_velocity_j,
                                    const double _td_i,
                                    const double _td_j);
+    
+    // 根据输入参数parameters (优化变量)
+    // 计算:
+        // 残差项e 和 雅克比矩阵
+    // 所有因子的基类都是 CostFunction , 基类的 Evaluate 函数是一个纯虚函数
     virtual bool Evaluate(double const *const *parameters,
                           double *residuals,
                           double **jacobians) const;

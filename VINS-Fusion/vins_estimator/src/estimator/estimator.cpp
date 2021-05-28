@@ -24,6 +24,27 @@ Estimator::~Estimator() {
     }
 }
 
+void Estimator::printData(int index) {
+    int last_index;
+    if(index < 0) {
+        index = frame_count;
+    } else if (index == 0) {
+        last_index = 0;
+    }
+    last_index = index - 1;
+    cout<<";  R: "<<Utility::R2ypr(Rs[index]).transpose()<<endl;;
+    cout<<"Ps : "<<Ps[index].transpose()<<";   Vs : "<<Vs[index].transpose()<<endl;
+    cout<<"[Bas: "<<Bas[index].transpose()<< "] [Bgs: "<<Bgs[index].transpose()<<"]"<<endl;
+    Eigen::Vector3d dp = Ps[index]-Ps[last_index];
+    Eigen::Vector3d dv = Vs[index]-Vs[last_index];
+    Eigen::Vector3d dq = Utility::R2ypr(Rs[index])-Utility::R2ypr(Rs[last_index]);
+    cout
+        <<"dp: "<< dp.transpose()
+        <<" dv: "<< dv.transpose()
+        <<" dq: "<< dq.transpose() <<endl;
+}
+
+
 void Estimator::clearState() {
     mProcess.lock();
     while (!accBuf.empty()) accBuf.pop();
@@ -182,9 +203,9 @@ bool Estimator::getIMUInterval(
         printf("not receive imu\n");
         return false;
     }
-    // printf("get imu from %f %f\n", t0, t1);
-    // printf("imu fornt time %f   imu end time %f\n", accBuf.front().first,
-    // accBuf.back().first);
+    printf("get imu from %f %f\n", t0, t1);
+    printf("imu fornt time %f   imu end time %f\n", accBuf.front().first,
+    accBuf.back().first);
     if (t1 <= accBuf.back().first) {
         while (accBuf.front().first <= t0) {
             accBuf.pop();
@@ -219,6 +240,7 @@ void Estimator::processMeasurements() {
             feature;
         vector<pair<double, Eigen::Vector3d>> accVector, gyrVector;
         if (!featureBuf.empty()) {
+            index_++;
             feature = featureBuf.front();
             curTime = feature.first + td;
             while (1) {
@@ -234,7 +256,6 @@ void Estimator::processMeasurements() {
             mBuf.lock();
             if (USE_IMU)
                 getIMUInterval(prevTime, curTime, accVector, gyrVector);
-
             featureBuf.pop();
             mBuf.unlock();
 
@@ -251,13 +272,21 @@ void Estimator::processMeasurements() {
                     processIMU(accVector[i].first, dt, accVector[i].second,
                                gyrVector[i].second);
                 }
+
+                auto ypr = Utility::R2ypr(pre_integrations[frame_count]->delta_q.toRotationMatrix());
+                printf("---------------1\n");
+                cout
+                    <<"pre_p: "<<pre_integrations[frame_count]->delta_p.transpose()
+                    <<"  pre_v: "<<pre_integrations[frame_count]->delta_v.transpose()
+                    <<"  pre_q: "<<ypr.transpose()
+                    <<endl;
+                printf("---------------2\n");
+
             }
             mProcess.lock();
             processImage(feature.second, feature.first);
             prevTime = curTime;
-
             printStatistics(*this, 0);
-
             std_msgs::Header header;
             header.frame_id = "world";
             header.stamp = ros::Time(feature.first);
@@ -272,7 +301,9 @@ void Estimator::processMeasurements() {
         }
 
         if (!MULTIPLE_THREAD) break;
-
+        // if(index_ == 2) {
+        //     break;
+        // }
         std::chrono::milliseconds dura(2);
         std::this_thread::sleep_for(dura);
     }
@@ -294,7 +325,9 @@ void Estimator::initFirstIMUPose(
     double yaw = Utility::R2ypr(R0).x();
     R0 = Utility::ypr2R(Eigen::Vector3d{-yaw, 0, 0}) * R0;
     Rs[0] = R0;
+    cout << "frame_count : " << endl << frame_count << endl;
     cout << "init R0 " << endl << Rs[0] << endl;
+    cout << "init P0 " << endl << Ps[0] << endl;
     // Vs[0] = Vector3d(5, 0, 0);
 }
 
@@ -316,6 +349,12 @@ void Estimator::processIMU(double t,
     }
 
     if (!pre_integrations[frame_count]) {
+        // std::cout<<
+        //     "acc_0" << acc_0 << std::endl <<
+        //     "gyr_0" << gyr_0 << std::endl <<
+        //     "Bas[frame_count]" << Bas[frame_count] << std::endl <<
+        //     "Bgs[frame_count]" << Bgs[frame_count] << std::endl;
+        //     printf("------------------------\n");
         pre_integrations[frame_count] = new IntegrationBase{
             acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
     }
@@ -348,6 +387,8 @@ void Estimator::processImage(
     const double header) {
     ROS_DEBUG("new image coming ------------------------------------------");
     ROS_DEBUG("Adding feature points %lu", image.size());
+    TicToc processImage1, processImage2;
+    double time1, time2, time3;
     if (f_manager.addFeatureCheckParallax(frame_count, image, td)) {
         marginalization_flag = MARGIN_OLD;
         // printf("keyframe\n");
@@ -355,7 +396,7 @@ void Estimator::processImage(
         marginalization_flag = MARGIN_SECOND_NEW;
         // printf("non-keyframe\n");
     }
-
+    time1 = processImage1.toc();
     ROS_DEBUG("%s", marginalization_flag ? "Non-keyframe" : "Keyframe");
     ROS_DEBUG("Solving %d", frame_count);
     ROS_DEBUG("number of feature: %d", f_manager.getFeatureCount());
@@ -366,6 +407,11 @@ void Estimator::processImage(
     all_image_frame.insert(make_pair(header, imageframe));
     tmp_pre_integration =
         new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
+    time2 = processImage2.toc();
+    std::cout
+        << "time1 = "<<time1
+        << "  time2 = "<<time2
+        <<std::endl;
 
     if (ESTIMATE_EXTRINSIC == 2) {
         ROS_INFO("calibrating extrinsic param, rotation movement is needed");
@@ -385,7 +431,6 @@ void Estimator::processImage(
             }
         }
     }
-
     if (solver_flag == INITIAL) {
         // monocular + IMU initilization
         if (!STEREO && USE_IMU) {
@@ -409,6 +454,7 @@ void Estimator::processImage(
 
         // stereo + IMU initilization
         if (STEREO && USE_IMU) {
+            printf("Start Init ----------------\n");
             f_manager.initFramePoseByPnP(frame_count, Ps, Rs, tic, ric);
             f_manager.triangulate(frame_count, Ps, Rs, tic, ric);
             if (frame_count == WINDOW_SIZE) {
@@ -470,9 +516,7 @@ void Estimator::processImage(
             featureTracker.removeOutliers(removeIndex);
             predictPtsInNextFrame();
         }
-
         ROS_DEBUG("solver costs: %fms", t_solve.toc());
-
         if (failureDetection()) {
             ROS_WARN("failure detection!");
             failure_occur = 1;
@@ -481,7 +525,7 @@ void Estimator::processImage(
             ROS_WARN("system reboot!");
             return;
         }
-
+        printData();
         slideWindow();
         f_manager.removeFailures();
         // prepare output of VINS
@@ -1362,8 +1406,9 @@ void Estimator::slideWindowOld() {
         P0 = back_P0 + back_R0 * tic[0];
         P1 = Ps[0] + Rs[0] * tic[0];
         f_manager.removeBackShiftDepth(R0, P0, R1, P1);
-    } else
+    } else {
         f_manager.removeBack();
+    }
 }
 
 void Estimator::getPoseInWorldFrame(Eigen::Matrix4d &T) {
