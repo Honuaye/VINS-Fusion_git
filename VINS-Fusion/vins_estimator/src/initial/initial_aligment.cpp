@@ -21,23 +21,25 @@ void solveGyroscopeBias(map<double, ImageFrame> &all_image_frame,
     b.setZero();
     map<double, ImageFrame>::iterator frame_i;
     map<double, ImageFrame>::iterator frame_j;
-    for (frame_i = all_image_frame.begin();
-         next(frame_i) != all_image_frame.end(); frame_i++) {
+    // 1. 遍历所有图像
+    for (frame_i = all_image_frame.begin(); next(frame_i) != all_image_frame.end(); frame_i++) {
         frame_j = next(frame_i);
         MatrixXd tmp_A(3, 3);
         tmp_A.setZero();
         VectorXd tmp_b(3);
         tmp_b.setZero();
-        Eigen::Quaterniond q_ij(frame_i->second.R.transpose() *
-                                frame_j->second.R);
-        tmp_A = frame_j->second.pre_integration->jacobian.template block<3, 3>(
-            O_R, O_BG);
-        tmp_b =
-            2 *
-            (frame_j->second.pre_integration->delta_q.inverse() * q_ij).vec();
+        // 获取相邻图像的 相对旋转 q_ij
+        Eigen::Quaterniond q_ij(frame_i->second.R.transpose() * frame_j->second.R);
+        // 雅克比矩阵 : J
+        // OR : 3  O_BG: 12
+        // tmp_A : dq_dbg
+        tmp_A = frame_j->second.pre_integration->jacobian.template block<3, 3>(O_R, O_BG);
+        // tmp_b ： 当前的重投影误差
+        tmp_b = 2 * (frame_j->second.pre_integration->delta_q.inverse() * q_ij).vec();
         A += tmp_A.transpose() * tmp_A;
         b += tmp_A.transpose() * tmp_b;
     }
+    // 求解:  H*delta_x = B;  H=J.transpose()*J;  B = -J.transpose()*f;
     delta_bg = A.ldlt().solve(b);
     ROS_WARN_STREAM("gyroscope bias initial calibration "
                     << delta_bg.transpose());
