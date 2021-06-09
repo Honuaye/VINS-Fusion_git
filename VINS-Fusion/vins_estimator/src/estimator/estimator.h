@@ -20,6 +20,7 @@
 #include <opencv2/core/eigen.hpp>
 #include <eigen3/Eigen/Dense>
 #include <eigen3/Eigen/Geometry>
+#include <fstream>
 
 #include "parameters.h"
 #include "feature_manager.h"
@@ -107,6 +108,12 @@ class Estimator {
 
     enum MarginalizationFlag { MARGIN_OLD = 0, MARGIN_SECOND_NEW = 1 };
 
+    std::ofstream save_pose_;
+    std::ofstream save_times_;
+    int64_t ceres_op_t_ = 0;
+    std::ofstream save_position_;
+    std::ofstream save_acc_bias_;
+    std::ofstream save_gyr_bias_;
     std::mutex mProcess;
     std::mutex mBuf;
     std::mutex mPropagate;

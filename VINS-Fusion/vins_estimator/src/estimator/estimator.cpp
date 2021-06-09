@@ -18,6 +18,18 @@ Estimator::Estimator() : f_manager{Rs} {
 }
 
 Estimator::~Estimator() {
+    std::cout<<"~Estimator"<<std::endl;
+    if(save_pose_.is_open() ||
+        save_position_.is_open() ||
+        save_acc_bias_.is_open() ||
+        save_times_.is_open() ||
+        save_gyr_bias_.is_open()) {
+        save_pose_.close();
+        save_position_.close();
+        save_acc_bias_.close();
+        save_times_.close();
+        save_gyr_bias_.close();
+    }
     if (MULTIPLE_THREAD) {
         processThread.join();
         printf("join thread \n");
@@ -107,6 +119,30 @@ void Estimator::setParameter() {
         initThreadFlag = true;
         // 开启一个新的线程，启动函数  Estimator::processMeasurements
         processThread = std::thread(&Estimator::processMeasurements, this);
+    }
+    // set save
+    std::string save_pose_path = MY_OUTPUT_FOLDER.c_str() + std::string("pose.txt");
+    std::string save_position_path = MY_OUTPUT_FOLDER + "position.txt";
+    std::string save_acc_bias_path = MY_OUTPUT_FOLDER + "accBias.txt";
+    std::string save_time_path = MY_OUTPUT_FOLDER + "time.txt";
+    std::string save_gyr_bias_path = MY_OUTPUT_FOLDER + "gyrBias.txt";
+    save_pose_.open(save_pose_path, std::ios::out | std::ios::trunc);
+    save_position_.open(save_position_path, std::ios::out | std::ios::trunc);
+    save_acc_bias_.open(save_acc_bias_path, std::ios::out | std::ios::trunc);
+    save_times_.open(save_time_path, std::ios::out | std::ios::trunc);
+    save_gyr_bias_.open(save_gyr_bias_path, std::ios::out | std::ios::trunc);
+    save_pose_.clear();
+    save_position_.clear();
+    save_acc_bias_.clear();
+    save_times_.clear();
+    save_gyr_bias_.clear();
+    if(!save_pose_.is_open() ||
+        !save_position_.is_open() ||
+        !save_acc_bias_.is_open() ||
+        !save_times_.is_open() ||
+        !save_gyr_bias_.is_open()) {
+        std::cout<<"Failed to open save file !!!"<<std::endl;
+        assert(0);
     }
     mProcess.unlock();
 }
@@ -245,11 +281,13 @@ bool Estimator::IMUAvailable(double t) {
 
 void Estimator::processMeasurements() {
     while (1) {
+        static double save_index = 0;
         // printf("process measurments\n");
         pair<double, map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>>>
             feature;
         vector<pair<double, Eigen::Vector3d>> accVector, gyrVector;
         if (!featureBuf.empty()) {
+            TicToc estimator_t;
             feature = featureBuf.front();
             curTime = feature.first + td;
             while (1) {
@@ -299,6 +337,54 @@ void Estimator::processMeasurements() {
             pubPointCloud(*this, header);
             pubKeyframe(*this);
             pubTF(*this, header);
+
+            {
+                save_times_
+                    <<save_index<<","
+                    <<estimator_t.toc()<<","
+                    <<ceres_op_t_
+                    <<std::endl;
+                Eigen::Vector3d ypr =  Utility::R2ypr(Rs[frame_count]);
+                save_pose_
+                    << save_index<<","
+                    <<ypr(0)<<","
+                    <<ypr(1)<<","
+                    <<ypr(2)<<","
+                    << std::endl
+                    ;
+                // Quaterniond quarternion = Quaterniond(
+                //         Rs[frame_count]);
+                // save_pose_
+                //     << save_index<<","
+                //     <<quarternion.x()<<","
+                //     <<quarternion.y()<<","
+                //     <<quarternion.z()<<","
+                //     <<quarternion.w()
+                //     << std::endl
+                //     ;
+                save_position_
+                    << save_index<<","
+                    <<Ps[frame_count](0)<<","
+                    <<Ps[frame_count](1)<<","
+                    <<Ps[frame_count](2)
+                    << std::endl
+                    ;
+                save_acc_bias_
+                    << save_index<<","
+                    <<Bas[frame_count](0)<<","
+                    <<Bas[frame_count](1)<<","
+                    <<Bas[frame_count](2)
+                    << std::endl
+                    ;
+                save_gyr_bias_
+                    << save_index<<","
+                    <<Bgs[frame_count](0)<<","
+                    <<Bgs[frame_count](1)<<","
+                    <<Bgs[frame_count](2)
+                    << std::endl
+                    ;
+                save_index++;
+            }
             mProcess.unlock();
         }
 
@@ -501,7 +587,7 @@ void Estimator::processImage(
             featureTracker.removeOutliers(removeIndex);
             predictPtsInNextFrame();
         }
-
+        ceres_op_t_ = t_solve.toc();
         ROS_DEBUG("solver costs: %fms", t_solve.toc());
 
         if (failureDetection()) {

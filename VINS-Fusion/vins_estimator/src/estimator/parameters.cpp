@@ -30,6 +30,7 @@ int ROLLING_SHUTTER;
 std::string EX_CALIB_RESULT_PATH;
 std::string VINS_RESULT_PATH;
 std::string OUTPUT_FOLDER;
+std::string MY_OUTPUT_FOLDER;
 std::string IMU_TOPIC;
 int ROW, COL;
 double TD;
@@ -100,6 +101,8 @@ void readParameters(std::string config_file) {
     MIN_PARALLAX = fsSettings["keyframe_parallax"];
     MIN_PARALLAX = MIN_PARALLAX / FOCAL_LENGTH;
 
+    fsSettings["my_output_path"] >> MY_OUTPUT_FOLDER;
+    std::cout << "my result path " << MY_OUTPUT_FOLDER << std::endl;
     fsSettings["output_path"] >> OUTPUT_FOLDER;
     VINS_RESULT_PATH = OUTPUT_FOLDER + "/vio.csv";
     std::cout << "result path " << VINS_RESULT_PATH << std::endl;
