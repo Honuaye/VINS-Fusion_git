@@ -29,6 +29,7 @@
 #include "../estimator/estimator.h"
 #include "../estimator/parameters.h"
 #include <fstream>
+#include "../estimator/gtsam-definitions.h"
 
 extern ros::Publisher pub_odometry;
 extern ros::Publisher pub_path, pub_pose;
@@ -61,6 +62,8 @@ void pubKeyPoses(const Estimator &estimator, const std_msgs::Header &header);
 void pubCameraPose(const Estimator &estimator, const std_msgs::Header &header);
 
 void pubPointCloud(const Estimator &estimator, const std_msgs::Header &header);
+
+void pubGtsamPointCloud(const Estimator &estimator, const std_msgs::Header &header);
 
 void pubTF(const Estimator &estimator, const std_msgs::Header &header);
 

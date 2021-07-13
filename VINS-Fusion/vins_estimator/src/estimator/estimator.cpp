@@ -339,7 +339,6 @@ void Estimator::setParameter() {
     last_kf_id_ = -1;
     curr_kf_id_ = 0;
     // Init imu frontend
-    // imu_frontend_ = std::make_unique<ImuFrontend>(imu_params_, imu_bias_lkf_);
     keyframe_imu_ = std::make_unique<ImuFrontend>(imu_params_, imu_bias_lkf_);
     // Init smoother.
     gtsam::ISAM2Params isam_param;
@@ -352,6 +351,44 @@ void Estimator::setParameter() {
                      &constant_velocity_prior_noise_);
     // /******* GET GTSAM PARAMS ********/
     {
+        // get gt
+        std::string ground_truth_path = GROUND_TRUTH_PATH + "data.csv";
+        std::ifstream gt_quaternion;
+        gt_quaternion.open(ground_truth_path, std::ios::in);
+        if(gt_quaternion.is_open()) {
+            int size = 0;
+            std::string gt;
+            while (getline(gt_quaternion, gt)) {
+                if(size == 0){
+                    size++;
+                    continue;
+                }
+                vector<double> data_vec;
+                std::string split_flag(",");
+                while (gt.find_first_of(split_flag) != std::string::npos) {
+                    int end = gt.find_first_of(split_flag);
+                    string str = gt.substr(0, end);
+                    gt = gt.substr(end + 1);
+                    data_vec.push_back(atof(str.c_str()));
+                }
+                data_vec.push_back(atof(gt.c_str()));
+                double time = data_vec[0] * 1e-9;
+                Eigen::Vector3d tmp_p(data_vec[1], data_vec[2], data_vec[3]);
+                Quaterniond tmp_q(data_vec[4], data_vec[5], data_vec[6], data_vec[7]);
+                Eigen::Vector3d tmp_v(data_vec[8], data_vec[9], data_vec[10]);
+                Eigen::Vector3d tmp_bg(data_vec[11], data_vec[12], data_vec[13]);
+                Eigen::Vector3d tmp_ba(data_vec[14], data_vec[15], data_vec[16]);
+                gt_p_.insert(make_pair(time, tmp_p));
+                gt_q_.insert(make_pair(time, tmp_q));
+                gt_v_.insert(make_pair(time, tmp_v));
+                gt_bg_.insert(make_pair(time, tmp_bg));
+                gt_ba_.insert(make_pair(time, tmp_ba));
+                size++;
+            }
+        }
+        for(auto it : gt_ba_){
+            cout<<it.first<<", "<<it.second.transpose()<<endl;
+        }
         // set save
         std::string horizon_string = std::to_string(u_int(backend_params_.horizon_));
         std::string save_path = MY_OUTPUT_FOLDER + "gtsam_h"+horizon_string+"_";
@@ -493,7 +530,6 @@ bool Estimator::IMUAvailable(double t) {
 
 void Estimator::processMeasurements() {
     while (1) {
-        static double save_index = 0;
         pair<double, map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>>> feature;
         vector<pair<double, Eigen::Vector3d>> accVector, gyrVector;
         if (!featureBuf.empty()) {
@@ -541,37 +577,15 @@ void Estimator::processMeasurements() {
                                gyrVector[i].second);
                 }
                 //****GTSAM****//
-
-                // 对比两边的预积分
-                // estimator_pim_ = imu_frontend_->preintegrateImuMeasurements(
-                //         accVector, gyrVector, curTime, prevTime);
                 keyframe_pim_ = keyframe_imu_->preintegrateImuMeasurements(
                         accVector, gyrVector, curTime, prevTime);
                 auto ypr = Utility::R2ypr(pre_integrations[frame_count]->delta_q.toRotationMatrix());
-                // printf("---------------1\n");
-                cout
-                    <<"pre_p: "<<pre_integrations[frame_count]->delta_p.transpose()
-                    <<"  pre_v: "<<pre_integrations[frame_count]->delta_v.transpose()
-                    <<"  pre_q: "<<ypr.transpose()
-                    <<endl;
-                // printf("---------------2\n");
-                keyframe_pim_->print("pim");
-                // printf("---------------3\n");
-                cout<<"d_Ps = "<<(Ps[frame_count] - Ps[frame_count - 1]).transpose()
-                    <<"  d_Vs = "<<(Vs[frame_count]- Vs[frame_count - 1]).transpose()
-                    <<"  d_qs = "<<Utility::R2ypr(Rs[frame_count-1].transpose()*Rs[frame_count]).transpose()
-                    <<endl;
-                // printf("---------------4\n");
-
-
                 if (solver_flag != INITIAL) {
                     Ps[WINDOW_SIZE] = tmp;
-                    // Rs[WINDOW_SIZE] = Rs[WINDOW_SIZE -1];
                 }
                 //****GTSAM****//
             }
             mProcess.lock();
-            // CHECK(estimator_pim_);
             CHECK(keyframe_pim_);
             processImageGtsam(feature.second, feature.first, keyframe_pim_);
             prevTime = curTime;
@@ -582,58 +596,112 @@ void Estimator::processMeasurements() {
             pubOdometry(*this, header);
             pubKeyPoses(*this, header);
             pubCameraPose(*this, header);
-            pubPointCloud(*this, header);
+            // // pubPointCloud(*this, header);
+            if(lmk_ids_to_3d_points_in_time_horizon_.size() > 0) {
+                pubGtsamPointCloud(*this, header);
+            }
             pubKeyframe(*this);
             pubTF(*this, header);
+            if(solver_flag == NON_LINEAR)
             {
-                save_estimator_times_ <<save_index<<","<< estimator_time.toc()<<endl;
-                Eigen::Vector3d ypr =  Utility::R2ypr(Rs[frame_count]);
+                {
+                    Eigen::Matrix4d Tw0;
+                    Eigen::Matrix3d R0 = gt_q_.begin()->second.toRotationMatrix();
+                    Eigen::Vector3d t0 = gt_p_.begin()->second;
+                    if(save_first_data_) {
+                        Tw0.setIdentity();
+                        Tw0.block<3, 3>(0, 0) = R0;
+                        Tw0.block<3, 1>(0, 3) = t0;
+                    }
+                    while (gt_p_.begin()->first < curTime) {
+                        if(save_first_data_) {
+                            gap_q_ = gt_q_.begin()->second;
+                            gap_p_ = gt_p_.begin()->second;
+                            gap_v_ = gt_v_.begin()->second;
+                            gap_bg_ = gt_bg_.begin()->second;
+                            gap_ba_ = gt_ba_.begin()->second;
+                        }
+                        gt_p_.erase(gt_p_.begin());
+                        gt_q_.erase(gt_q_.begin());
+                        gt_v_.erase(gt_v_.begin());
+                        gt_bg_.erase(gt_bg_.begin());
+                        gt_ba_.erase(gt_ba_.begin());
+                    }
+                    cout<<setprecision(16)<<"gt_p_: "<<gt_p_.begin()->first<<"; urTime:"<<curTime<<endl;
+                    if(save_first_data_) {
+                        T01_.setIdentity();
+                        R01_ = gt_q_.begin()->second.toRotationMatrix();
+                        t01_ = gt_p_.begin()->second;
+                        T01_.block<3, 3>(0, 0) = R01_;
+                        T01_.block<3, 1>(0, 3) = t01_;
+                        T01_ = Tw0.transpose() * T01_;
+                        R01_ = T01_.block<3, 3>(0, 0);
+                        t01_ = T01_.block<3, 1>(0, 3);
+                        cout<<"gap_p_: "<<gap_p_.transpose()<<endl;
+                        save_pose_ << "q(w, x, y, z); gt_q(); ypr; init rotation gt: "
+                            << gt_q_.begin()->second.w()
+                            << gt_q_.begin()->second.x()
+                            << gt_q_.begin()->second.y()
+                            << gt_q_.begin()->second.z()
+                            <<endl;
+                        save_position_ << "xyz, gt_xyz; init position gt: " << gt_p_.begin()->second.transpose()<<endl;
+                        save_acc_bias_ << "acc_bias(xyz), gt_acc_bias" <<endl;
+                        save_gyr_bias_ << "gyr_bias(xyz), gt_gyr_bias" <<endl;
+                        save_first_data_ = false;
+                    }
+                }
+                // Eigen::Matrix3d R_save = R01_* Rs[frame_count];
+                // Eigen::Vector3d t_save = R01_ * Ps[frame_count] + t01_;
+                Eigen::Matrix3d R_save = R01_* Rs[frame_count];
+                Eigen::Vector3d t_save = R01_ * Ps[frame_count] + t01_;
+                std::string current_time = std::to_string(curTime);
+                save_estimator_times_ << current_time <<","<< estimator_time.toc()<<endl;
+                Eigen::Vector3d ypr =  Utility::R2ypr(R_save);
+                Quaterniond q{R_save};
                 save_pose_
-                    << save_index<<","
+                    << current_time<<","
+                    <<q.w()<<","
+                    <<q.x()<<","
+                    <<q.y()<<","
+                    <<q.z()<<","
+                    <<gt_q_.begin()->second.w()<<","
+                    <<gt_q_.begin()->second.x()<<","
+                    <<gt_q_.begin()->second.y()<<","
+                    <<gt_q_.begin()->second.z()<<","
                     <<ypr(0)<<","
                     <<ypr(1)<<","
-                    <<ypr(2)<<","
-                    << std::endl
-                    ;
-                // Quaterniond quarternion = Quaterniond(
-                //         Rs[frame_count]);
-                // save_pose_
-                //     << save_index<<","
-                //     <<quarternion.x()<<","
-                //     <<quarternion.y()<<","
-                //     <<quarternion.z()<<","
-                //     <<quarternion.w()
-                //     << std::endl
-                //     ;
+                    <<ypr(2)
+                    << std::endl;
                 save_position_
-                    << save_index<<","
-                    <<Ps[frame_count](0)<<","
-                    <<Ps[frame_count](1)<<","
-                    <<Ps[frame_count](2)
+                    << current_time<<","
+                    <<t_save(0)<<","
+                    <<t_save(1)<<","
+                    <<t_save(2)<<","
+                    <<gt_p_.begin()->second(0)<<","
+                    <<gt_p_.begin()->second(1)<<","
+                    <<gt_p_.begin()->second(2)
                     << std::endl
                     ;
                 save_acc_bias_
-                    << save_index<<","
+                    << current_time<<","
                     <<Bas[frame_count](0)<<","
                     <<Bas[frame_count](1)<<","
-                    <<Bas[frame_count](2)
+                    <<Bas[frame_count](2)<<","
+                    <<gt_ba_.begin()->second(0)<<","
+                    <<gt_ba_.begin()->second(1)<<","
+                    <<gt_ba_.begin()->second(2)
                     << std::endl
                     ;
                 save_gyr_bias_
-                    << save_index<<","
+                    << current_time<<","
                     <<Bgs[frame_count](0)<<","
                     <<Bgs[frame_count](1)<<","
-                    <<Bgs[frame_count](2)
+                    <<Bgs[frame_count](2)<<","
+                    <<gt_bg_.begin()->second(0)<<","
+                    <<gt_bg_.begin()->second(1)<<","
+                    <<gt_bg_.begin()->second(2)
                     << std::endl
                     ;
-                save_index++;
-            }
-
-            if( solver_flag == NON_LINEAR) {
-                // process_num++;
-            }
-            if(process_num > 400) {
-                assert(0);
             }
             mProcess.unlock();
         }
@@ -713,7 +781,7 @@ void Estimator::processIMU(double t,
 bool Estimator::failureDetection() {
     if (Bas[WINDOW_SIZE].norm() > 2.5) {
         ROS_INFO(" big IMU acc bias estimation %f", Bas[WINDOW_SIZE].norm());
-        return true;
+        // return true;
     }
     if (Bgs[WINDOW_SIZE].norm() > 1.0) {
         ROS_INFO(" big IMU gyr bias estimation %f", Bgs[WINDOW_SIZE].norm());
@@ -925,7 +993,6 @@ void Estimator::processImageGtsam(
     } else {
         keyframe_ = false;
     }
-
     Headers[frame_count] = header;
     timestamp_lkf_ = header;
     ImageFrame imageframe(image, header);
@@ -957,15 +1024,14 @@ void Estimator::processImageGtsam(
                 gtsam::Pose3 initial_pose_guess;
                 gtsam::Vector3 velocity_guess;
                 printData();
-                // gyroscope bias initial calibration -0.0025655  0.0285788  0.0844428
-                // VINS master: gyroscope bias initial calibration -0.00257274    0.020599   0.0823816
-                // new master : gyroscope bias initial calibration -0.00257449   0.0205624   0.0823622
-                // this : 
-                // -0.00180214   0.0290869   0.0838947
-                // -0.00180214   0.0290869   0.0838947  (需要跟提取特征点阈值有关)
-                // gyroscope bias initial calibration -0.00180214   0.0290869   0.0838947  
+                // 150:
+                    // gyroscope bias initial calibration -0.0025655  0.0285788  0.0844428
+                    // VINS master: gyroscope bias initial calibration -0.00257274    0.020599   0.0823816
+                // 400 : 
+                    // -0.00180214   0.0290869   0.0838947
+                    // -0.00180214   0.0290869   0.0838947  (需要跟提取特征点阈值有关)
+                    // gyroscope bias initial calibration -0.00180214   0.0290869   0.0838947  
                 ImuBias imu_bias_guess(Bas[frame_count], Bgs[frame_count]);
-                // imu_frontend_->resetIntegrationWithCachedBias(imu_bias_guess);
                 keyframe_imu_->resetIntegrationWithCachedBias(imu_bias_guess);
                 VioNavState initial_state_estimate =
                     VioNavState(initial_pose_guess, velocity_guess, imu_bias_guess);
@@ -1086,6 +1152,18 @@ void Estimator::processImageGtsam(
             getPoseInWorldFrame(new_T);
             if(curr_kf_id_ > 15) {
                 motion_model_ = prev_T.inverse() * new_T;
+            }
+            if (1) {
+                // Generate this map only if requested, since costly.
+                // Also, if lmk type requested, fill lmk id to lmk type object.
+                // WARNING this also cleans the lmks inside the old_smart_factors map!
+                TicToc get_3dpoint;
+                size_t kMinLmkObs = 2;
+                lmk_ids_to_3d_points_in_time_horizon_ =
+                    getMapLmkIdsTo3dPointsInTimeHorizon(
+                        smoother_->getFactors(), kMinLmkObs);
+                cout<<"get_3dpoint : "<<get_3dpoint.toc()<<";  point3.size()="
+                    <<lmk_ids_to_3d_points_in_time_horizon_.size()<<endl;
             }
         } else {
             cout<<"faile to optimization, in id: "<<curr_kf_id_<<endl;
@@ -1492,6 +1570,9 @@ bool Estimator::optimize(
         // cout<<", "<<(uint64_t)slot<<") ";
         it->second.first = boost::dynamic_pointer_cast<SmartStereoFactor>(
                     smoother_->getFactors().at(slot));
+        boost::shared_ptr<SmartStereoFactor> gsf =
+            boost::dynamic_pointer_cast<SmartStereoFactor>(smoother_->getFactors().at(slot));
+
     }
     // cout<<")"<<endl;
     cout<<"optimize_T: "<<optimize_T.toc()<<endl;
@@ -1694,7 +1775,6 @@ void Estimator::updateStates(const FrameId &cur_id) {
     imu_bias_lkf_ = state_.at<gtsam::imuBias::ConstantBias>(
         gtsam::Symbol(kImuBiasSymbolChar, cur_id));
     // update imu frontend
-    // imu_frontend_->resetIntegrationWithCachedBias(imu_bias_lkf_);
     keyframe_imu_->resetIntegrationWithCachedBias(imu_bias_lkf_);
     {
         Rs[WINDOW_SIZE] = W_Pose_B_lkf_.rotation().matrix();
@@ -1959,4 +2039,121 @@ void Estimator::findSlotsOfFactorsWithKey(
     }
     slot++;
   }
+}
+
+// Get valid 3D points and corresponding lmk id.
+// Warning! it modifies old_smart_factors_!!
+std::unordered_map<LandmarkId, gtsam::Point3> Estimator::getMapLmkIdsTo3dPointsInTimeHorizon(
+    const gtsam::NonlinearFactorGraph& graph,
+    const size_t& min_age) {
+    std::unordered_map<LandmarkId, gtsam::Point3> points_with_id;
+    // Step 1: Add landmarks encoded in the smart factors.
+    // old_smart_factors_ has all smart factors included so far.
+    // Retrieve lmk ids from smart factors in state.
+    size_t nr_valid_smart_lmks = 0, nr_smart_lmks = 0;
+    for (SmartFactorMap::iterator old_smart_factor_it = old_smart_factors_.begin();
+        old_smart_factor_it != old_smart_factors_.end(); old_smart_factor_it++) {
+        //!< landmarkId -> {SmartFactorPtr, SlotIndex}
+        // Store number of smart lmks (one smart factor per landmark).
+        nr_smart_lmks++;
+        // Retrieve lmk_id of the smart factor.
+        const LandmarkId& lmk_id = old_smart_factor_it->first;
+        // Retrieve smart factor.
+        const SmartStereoFactor::shared_ptr& smart_factor_ptr = old_smart_factor_it->second.first;
+        // Check that pointer is well definied.
+        CHECK(smart_factor_ptr) << "Smart factor is not well defined.";
+        // Retrieve smart factor slot in the graph.
+        const Slot& slot_id = old_smart_factor_it->second.second;
+        // Check that slot is admissible.
+        DCHECK(slot_id >= 0) << "Slot of smart factor is not admissible.";
+        // Ensure the graph size is small enough to cast to int.
+        DCHECK_LT(graph.size(), std::numeric_limits<Slot>::max()) << "Invalid cast, that would cause an overflow!";
+        // Slot should be inferior to the size of the graph.
+        DCHECK_LT(slot_id, static_cast<Slot>(graph.size()));
+        // Check that this slot_id exists in the graph, aka check that it is
+        // in bounds and that the pointer is live (aka at(slot_id) works).
+        if (!graph.exists(slot_id)) {
+            // cout << "The slot: " << slot_id << " does not exist in the graph. lmk id: " << lmk_id <<endl;
+            old_smart_factor_it = old_smart_factors_.erase(old_smart_factor_it);
+            // Update as well the feature track....
+            // TODO(TONI): please remove this and centralize how feature tracks
+            // and new/old_smart_factors are added and removed!
+            CHECK(deleteLmkFromFeatureTracks(lmk_id));
+            continue;
+        } else {
+            // cout << "Slot id: " << slot_id << " for smart factor of lmk id: " << lmk_id<<endl;
+        }
+        // Check that the pointer smart_factor_ptr points to the right element in the graph.
+        if (smart_factor_ptr != graph.at(slot_id)) {
+            // Pointer in the graph does not match
+            // the one we stored in old_smart_factors_
+            // ERROR: if the pointers don't match, then the code that follows does
+            // not make any sense, since we are using lmk_id which comes from
+            // smart_factor and result which comes from graph[slot_id], we should
+            // use smart_factor_ptr instead then...
+            LOG(ERROR) << "The factor with slot id: " << slot_id
+                        << " in the graph does not match the old_smart_factor of "
+                        << "lmk with id: " << lmk_id << "\n."
+                        << "Deleting old_smart_factor of lmk id: " << lmk_id;
+            old_smart_factor_it = old_smart_factors_.erase(old_smart_factor_it);
+            CHECK(deleteLmkFromFeatureTracks(lmk_id));
+            continue;
+        }
+        // Why do we do this? all info is in smart_factor_ptr
+        // such as the triangulated point, whether it is valid or not
+        // and the number of observations...
+        // Is graph more up to date?
+        boost::shared_ptr<SmartStereoFactor> gsf =
+            boost::dynamic_pointer_cast<SmartStereoFactor>(graph.at(slot_id));
+        CHECK(gsf) << "Cannot cast factor in graph to a smart stereo factor.";
+        // Get triangulation result from smart factor.
+        const gtsam::TriangulationResult& result = gsf->point();
+        // Check that the boost::optional result is initialized.
+        // Otherwise we will be dereferencing a nullptr and we will head
+        // directly to undefined behaviour wonderland.
+        if (result.valid()) {
+            CHECK(result.is_initialized());
+            if (gsf->measured().size() >= min_age) {
+                if(points_with_id.find(lmk_id) != points_with_id.end()) {
+                    continue;
+                }
+                points_with_id[lmk_id] = *result;
+                nr_valid_smart_lmks++;
+            } else {
+                VLOG(20) << "Rejecting lmk with id: " << lmk_id
+                            << " from list of lmks in time horizon: "
+                            << "not enough measurements, " << gsf->measured().size()
+                            << ", vs min_age of " << min_age << ".";
+            }  // gsf->measured().size() >= min_age ?
+        } else {
+            VLOG(20) << "Triangulation result for smart factor of lmk with id "
+                    << lmk_id << " is not initialized...";
+        }  // result.is_initialized()?
+    }
+
+    // Step 2: Add landmarks that now are in projection factors.
+    size_t nr_proj_lmks = 0;
+    // for (const gtsam::Values::Filtered<gtsam::Value>::ConstKeyValuePair&
+    //     key_value : state_.filter(gtsam::Symbol::ChrTest('l'))) {
+    //     DCHECK_EQ(gtsam::Symbol(key_value.key).chr(), 'l');
+    //     const LandmarkId& lmk_id = gtsam::Symbol(key_value.key).index();
+    //     DCHECK(points_with_id.find(lmk_id) == points_with_id.end());
+    //     points_with_id[lmk_id] = key_value.value.cast<gtsam::Point3>();
+    //     nr_proj_lmks++;
+    // }
+    // // TODO aren't these points post-optimization? Shouldn't we instead add
+    // // the points before optimization? Then the regularities we enforce will
+    // // have the most impact, otherwise the points in the optimization horizon
+    // // do not move that much after optimizing... they are almost frozen and
+    // // are not visually changing much...
+    // // They might actually not be changing that much because we are not
+    // // enforcing the regularities on the points that are out of current frame
+    // // in the Backend currently...
+    cout << "Landmark typology to be used for the mesh:\n"
+            << "Number of valid smart factors " << nr_valid_smart_lmks
+            << " out of " << nr_smart_lmks << "\n"
+            << "Number of landmarks (not involved in a smart factor) "
+            << nr_proj_lmks << ".\n Total number of landmarks: "
+            << (nr_valid_smart_lmks + nr_proj_lmks);
+    return points_with_id;
 }

@@ -46,9 +46,9 @@ class BackendParams {
     double betweenRotationPrecision_ = 0.0;
     double betweenTranslationPrecision_ = 1 / (0.1 * 0.1);
     //! iSAM params
-    double horizon_ = 6.0;
+    // double horizon_ = 6.0;
     // double horizon_ = 10.0;
-    // double horizon_ = 3.0;
+    double horizon_ = 3.0;
     int numOptimize_ = 2;
     bool useDogLeg_ = false;
     // bool useDogLeg_ = true;
@@ -252,11 +252,7 @@ class Estimator {
     FeatureTracks feature_tracks_;
     BackendParams backend_params_;
     ImuParams imu_params_;
-    std::unique_ptr<ImuFrontend> imu_frontend_ = nullptr;
     std::unique_ptr<ImuFrontend> keyframe_imu_ = nullptr;
-    // ImuFrontend::CombinedPimPtr estimator_pim_ = nullptr;
-    // ImuFrontend::CombinedPimPtr keyframe_pim_ = nullptr;
-    std::shared_ptr<gtsam::PreintegratedImuMeasurements> estimator_pim_ = nullptr;
     std::shared_ptr<gtsam::PreintegratedImuMeasurements> keyframe_pim_ = nullptr;
 
     std::unique_ptr<StereoCamera> stereo_camera_ = nullptr;
@@ -285,6 +281,10 @@ class Estimator {
                                 const cv::Mat &E12,
                                 const double &tol);
 
+    std::unordered_map<LandmarkId, gtsam::Point3> lmk_ids_to_3d_points_in_time_horizon_;
+    std::unordered_map<LandmarkId, gtsam::Point3> getMapLmkIdsTo3dPointsInTimeHorizon(
+        const gtsam::NonlinearFactorGraph& graph,
+        const size_t& min_age);
  protected:
     bool optimize(const Timestamp &timestamp_kf_sec,
                   const FrameId &cur_id,
@@ -534,5 +534,20 @@ class Estimator {
     int landmark_count_;
 
     //! Number of Cheirality exceptions
+    bool save_first_data_ = true;
     size_t counter_of_exceptions_ = 0;
+    std::map<double, Quaterniond> gt_q_;
+    std::map<double, Eigen::Vector3d> gt_p_;
+    std::map<double, Eigen::Vector3d> gt_v_;
+    std::map<double, Eigen::Vector3d> gt_ba_;
+    std::map<double, Eigen::Vector3d> gt_bg_;
+    Eigen::Quaterniond gap_q_;
+    Eigen::Vector3d gap_p_;
+    Eigen::Vector3d gap_v_;
+    Eigen::Vector3d gap_bg_;
+    Eigen::Vector3d gap_ba_;
+    Eigen::Matrix4d T01_;
+    Eigen::Matrix3d R01_;
+    Eigen::Vector3d t01_;
+
 };

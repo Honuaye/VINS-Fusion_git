@@ -299,6 +299,19 @@ void pubPointCloud(const Estimator &estimator, const std_msgs::Header &header) {
     pub_margin_cloud.publish(margin_cloud);
 }
 
+void pubGtsamPointCloud(const Estimator &estimator, const std_msgs::Header &header) {
+    sensor_msgs::PointCloud point_cloud;
+    point_cloud.header = header;
+    for(auto &it_point : estimator.lmk_ids_to_3d_points_in_time_horizon_) {
+        geometry_msgs::Point32 p;
+        p.x = (it_point.second)(0);
+        p.y = (it_point.second)(1);
+        p.z = (it_point.second)(2);
+        point_cloud.points.push_back(p);
+    }
+    pub_point_cloud.publish(point_cloud);
+}
+
 void pubTF(const Estimator &estimator, const std_msgs::Header &header) {
     if (estimator.solver_flag != Estimator::SolverFlag::NON_LINEAR) return;
     static tf::TransformBroadcaster br;
