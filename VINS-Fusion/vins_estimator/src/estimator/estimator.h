@@ -198,4 +198,20 @@ class Estimator {
 
     bool initFirstPoseFlag;
     bool initThreadFlag;
+
+    //! Number of Cheirality exceptions
+    std::map<double, Quaterniond> gt_q_;
+    std::map<double, Eigen::Vector3d> gt_p_;
+    std::map<double, Eigen::Vector3d> gt_v_;
+    std::map<double, Eigen::Vector3d> gt_ba_;
+    std::map<double, Eigen::Vector3d> gt_bg_;
+    Eigen::Quaterniond gap_q_;
+    Eigen::Vector3d gap_p_;
+    Eigen::Vector3d gap_v_;
+    Eigen::Vector3d gap_bg_;
+    Eigen::Vector3d gap_ba_;
+    Eigen::Matrix4d T01_;
+    Eigen::Matrix3d Rw0_;
+    Eigen::Vector3d tw0_;
+    bool save_first_data_ = true;
 };

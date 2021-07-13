@@ -31,6 +31,7 @@ std::string EX_CALIB_RESULT_PATH;
 std::string VINS_RESULT_PATH;
 std::string OUTPUT_FOLDER;
 std::string MY_OUTPUT_FOLDER;
+std::string GROUND_TRUTH_PATH;
 std::string IMU_TOPIC;
 int ROW, COL;
 double TD;
@@ -103,6 +104,8 @@ void readParameters(std::string config_file) {
 
     fsSettings["my_output_path"] >> MY_OUTPUT_FOLDER;
     std::cout << "my result path " << MY_OUTPUT_FOLDER << std::endl;
+    fsSettings["ground_truth_path"] >> GROUND_TRUTH_PATH;
+    std::cout << "ground_truth path " << GROUND_TRUTH_PATH << std::endl;
     fsSettings["output_path"] >> OUTPUT_FOLDER;
     VINS_RESULT_PATH = OUTPUT_FOLDER + "/vio.csv";
     std::cout << "result path " << VINS_RESULT_PATH << std::endl;

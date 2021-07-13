@@ -10,6 +10,8 @@ image0_topic: "/cam0/image_raw"
 image1_topic: "/cam1/image_raw"
 output_path: "~/output/"
 my_output_path: "/home/yehonghua/ws/slam/tool/VINS/master/"
+# ground_truth_path: "/home/yehonghua/ws/slam/tool/euroc/MH01/"
+ground_truth_path: "/home/yehonghua/ws/slam/tool/euroc/MH02/"
 
 cam0_calib: "cam0_pinhole.yaml"
 cam1_calib: "cam1_pinhole.yaml"

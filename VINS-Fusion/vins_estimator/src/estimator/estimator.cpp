@@ -113,12 +113,50 @@ void Estimator::setParameter() {
     cout << "set g " << g.transpose() << endl;
     // CAM_NAMES 存放了所有相机的外参文件路径
     featureTracker.readIntrinsicParameter(CAM_NAMES);
-
     std::cout << "MULTIPLE_THREAD is " << MULTIPLE_THREAD << '\n';
     if (MULTIPLE_THREAD && !initThreadFlag) {
         initThreadFlag = true;
         // 开启一个新的线程，启动函数  Estimator::processMeasurements
         processThread = std::thread(&Estimator::processMeasurements, this);
+    }
+
+    // get gt
+    std::string ground_truth_path = GROUND_TRUTH_PATH + "data.csv";
+    std::ifstream gt_quaternion;
+    gt_quaternion.open(ground_truth_path, std::ios::in);
+    if(gt_quaternion.is_open()) {
+        int size = 0;
+        std::string gt;
+        while (getline(gt_quaternion, gt)) {
+            if(size == 0){
+                size++;
+                continue;
+            }
+            vector<double> data_vec;
+            std::string split_flag(",");
+            while (gt.find_first_of(split_flag) != std::string::npos) {
+                int end = gt.find_first_of(split_flag);
+                string str = gt.substr(0, end);
+                gt = gt.substr(end + 1);
+                data_vec.push_back(atof(str.c_str()));
+            }
+            data_vec.push_back(atof(gt.c_str()));
+            double time = data_vec[0] * 1e-9;
+            Eigen::Vector3d tmp_p(data_vec[1], data_vec[2], data_vec[3]);
+            Quaterniond tmp_q(data_vec[4], data_vec[5], data_vec[6], data_vec[7]);
+            Eigen::Vector3d tmp_v(data_vec[8], data_vec[9], data_vec[10]);
+            Eigen::Vector3d tmp_bg(data_vec[11], data_vec[12], data_vec[13]);
+            Eigen::Vector3d tmp_ba(data_vec[14], data_vec[15], data_vec[16]);
+            gt_p_.insert(make_pair(time, tmp_p));
+            gt_q_.insert(make_pair(time, tmp_q));
+            gt_v_.insert(make_pair(time, tmp_v));
+            gt_bg_.insert(make_pair(time, tmp_bg));
+            gt_ba_.insert(make_pair(time, tmp_ba));
+            size++;
+        }
+    }
+    for(auto it : gt_ba_){
+        cout<<it.first<<", "<<it.second.transpose()<<endl;
     }
     // set save
     std::string save_pose_path = MY_OUTPUT_FOLDER.c_str() + std::string("pose.txt");
@@ -129,8 +167,8 @@ void Estimator::setParameter() {
     save_pose_.open(save_pose_path, std::ios::out | std::ios::trunc);
     save_position_.open(save_position_path, std::ios::out | std::ios::trunc);
     save_acc_bias_.open(save_acc_bias_path, std::ios::out | std::ios::trunc);
-    save_times_.open(save_time_path, std::ios::out | std::ios::trunc);
     save_gyr_bias_.open(save_gyr_bias_path, std::ios::out | std::ios::trunc);
+    save_times_.open(save_time_path, std::ios::out | std::ios::trunc);
     save_pose_.clear();
     save_position_.clear();
     save_acc_bias_.clear();
@@ -281,7 +319,6 @@ bool Estimator::IMUAvailable(double t) {
 
 void Estimator::processMeasurements() {
     while (1) {
-        static double save_index = 0;
         // printf("process measurments\n");
         pair<double, map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>>>
             feature;
@@ -337,53 +374,106 @@ void Estimator::processMeasurements() {
             pubPointCloud(*this, header);
             pubKeyframe(*this);
             pubTF(*this, header);
-
             {
-                save_times_
-                    <<save_index<<","
-                    <<estimator_t.toc()<<","
-                    <<ceres_op_t_
-                    <<std::endl;
-                Eigen::Vector3d ypr =  Utility::R2ypr(Rs[frame_count]);
+                {
+                    while (gt_p_.begin()->first < curTime) {
+                        gt_p_.erase(gt_p_.begin());
+                        gt_q_.erase(gt_q_.begin());
+                        gt_v_.erase(gt_v_.begin());
+                        gt_bg_.erase(gt_bg_.begin());
+                        gt_ba_.erase(gt_ba_.begin());
+                    }
+                    cout<<setprecision(16)<<"gt_p_: "<<gt_p_.begin()->first<<"; urTime:"<<curTime<<endl;
+                    if(save_first_data_) {
+                        save_pose_ << "q(w, x, y, z); gt_q(); ypr; init rotation gt: "
+                            << gt_q_.begin()->second.w()
+                            << gt_q_.begin()->second.x()
+                            << gt_q_.begin()->second.y()
+                            << gt_q_.begin()->second.z()
+                            <<endl;
+                        save_position_ << "xyz, gt_xyz; init position gt: " << gt_p_.begin()->second.transpose()<<endl;
+                        save_acc_bias_ << "acc_bias(xyz), gt_acc_bias" <<endl;
+                        save_gyr_bias_ << "gyr_bias(xyz), gt_gyr_bias" <<endl;
+                        save_first_data_ = false;
+                        Rw0_ = gt_q_.begin()->second.toRotationMatrix();
+                        tw0_ = gt_p_.begin()->second;
+                        Matrix4d Tw0, Tt0;
+                        Tw0.setIdentity();
+                        Tw0.block<3,3>(0,0)=Rw0_;
+                        Tw0.block<3,1>(0,3)=tw0_;
+                        Tt0.setIdentity();
+                        Tt0.block<3,3>(0,0)=Rs[frame_count];
+                        Tt0.block<3,1>(0,3)=Ps[frame_count];
+                        Matrix4d Twt = Tw0 * Tt0.transpose();
+                        Rw0_ = Twt.block<3,3>(0,0);
+                        tw0_ = Twt.block<3,1>(0,3);
+                        cout<<setprecision(16)<<"gt_p_: "<<gt_p_.begin()->first<<"; urTime:"<<curTime<<endl;
+                        cout<<"Tt0:="<<endl<<Tt0<<endl;
+                        cout<<"Twt:="<<endl<<Twt<<endl;
+                        cout
+                            <<"Rw0_:"<<Rw0_<<endl
+                            <<"tw0_:"<<tw0_.transpose()<<endl
+                            <<"Rs_:"<<Rs[frame_count]<<endl
+                            <<"ts_:"<<Ps[frame_count].transpose()<<endl;
+                        printf("save first end \n");
+                    }
+                }
+                Eigen::Matrix3d R_save = Rw0_* Rs[frame_count];
+                Eigen::Vector3d t_save = Rw0_ * Ps[frame_count] + tw0_;
+                // Eigen::Matrix3d R_save = Rs[frame_count];
+                // Eigen::Vector3d t_save = Ps[frame_count];
+                std::string current_time = std::to_string(curTime);
+                cout<<"cur_T: "<<current_time<<endl;
+                save_times_ <<current_time<<","<<estimator_t.toc()<<","<<ceres_op_t_<<std::endl;
+                Eigen::Vector3d ypr =  Utility::R2ypr(R_save);
+                Eigen::Vector3d gt_ypr =  Utility::R2ypr(gt_q_.begin()->second.toRotationMatrix());
+                Quaterniond q{R_save};
                 save_pose_
-                    << save_index<<","
+                    << current_time<<","
+                    <<q.w()<<","
+                    <<q.x()<<","
+                    <<q.y()<<","
+                    <<q.z()<<","
+                    <<gt_q_.begin()->second.w()<<","
+                    <<gt_q_.begin()->second.x()<<","
+                    <<gt_q_.begin()->second.y()<<","
+                    <<gt_q_.begin()->second.z()<<","
                     <<ypr(0)<<","
                     <<ypr(1)<<","
                     <<ypr(2)<<","
-                    << std::endl
-                    ;
-                // Quaterniond quarternion = Quaterniond(
-                //         Rs[frame_count]);
-                // save_pose_
-                //     << save_index<<","
-                //     <<quarternion.x()<<","
-                //     <<quarternion.y()<<","
-                //     <<quarternion.z()<<","
-                //     <<quarternion.w()
-                //     << std::endl
-                //     ;
+                    <<gt_ypr(0)<<","
+                    <<gt_ypr(1)<<","
+                    <<gt_ypr(2)
+                    << std::endl;
                 save_position_
-                    << save_index<<","
-                    <<Ps[frame_count](0)<<","
-                    <<Ps[frame_count](1)<<","
-                    <<Ps[frame_count](2)
-                    << std::endl
-                    ;
+                    << current_time<<","
+                    <<t_save(0)<<","
+                    <<t_save(1)<<","
+                    <<t_save(2)<<","
+                    <<gt_p_.begin()->second(0)<<","
+                    <<gt_p_.begin()->second(1)<<","
+                    <<gt_p_.begin()->second(2)
+                    << std::endl;
                 save_acc_bias_
-                    << save_index<<","
+                    << current_time<<","
                     <<Bas[frame_count](0)<<","
                     <<Bas[frame_count](1)<<","
-                    <<Bas[frame_count](2)
+                    <<Bas[frame_count](2)<<","
+                    <<gt_ba_.begin()->second(0)<<","
+                    <<gt_ba_.begin()->second(1)<<","
+                    <<gt_ba_.begin()->second(2)
                     << std::endl
                     ;
                 save_gyr_bias_
-                    << save_index<<","
+                    << current_time<<","
                     <<Bgs[frame_count](0)<<","
                     <<Bgs[frame_count](1)<<","
-                    <<Bgs[frame_count](2)
+                    <<Bgs[frame_count](2)<<","
+                    <<gt_bg_.begin()->second(0)<<","
+                    <<gt_bg_.begin()->second(1)<<","
+                    <<gt_bg_.begin()->second(2)
                     << std::endl
                     ;
-                save_index++;
             }
             mProcess.unlock();
         }
@@ -412,7 +502,6 @@ void Estimator::initFirstIMUPose(
     R0 = Utility::ypr2R(Eigen::Vector3d{-yaw, 0, 0}) * R0;
     Rs[0] = R0;
     cout << "init R0 " << endl << Rs[0] << endl;
-    // Vs[0] = Vector3d(5, 0, 0);
 }
 
 void Estimator::initFirstPose(Eigen::Vector3d p, Eigen::Matrix3d r) {
