@@ -51,12 +51,13 @@ void FeatureTracker::setMask() {
     mask = cv::Mat(row, col, CV_8UC1, cv::Scalar(255));
 
     // prefer to keep features that are tracked for long time
+    //算法会更加倾向于保留跟踪时间长的特征点
     vector<pair<int, pair<cv::Point2f, int>>> cnt_pts_id;
-
-    for (unsigned int i = 0; i < cur_pts.size(); i++)
+    for (unsigned int i = 0; i < cur_pts.size(); i++) {
         cnt_pts_id.push_back(
             make_pair(track_cnt[i], make_pair(cur_pts[i], ids[i])));
-
+    }
+    //对光流跟踪到的特征点forw_pts，按照被跟踪到的次数cnt从大到小排序
     sort(cnt_pts_id.begin(), cnt_pts_id.end(),
          [](const pair<int, pair<cv::Point2f, int>> &a,
             const pair<int, pair<cv::Point2f, int>> &b) {
@@ -104,12 +105,14 @@ FeatureTracker::trackImage(double _cur_time,
     */
     cur_pts.clear();
 
+    // cout<<"frame_id: "<<frame_id<<endl;
     if (prev_pts.size() > 0) {
         TicToc t_o;
         vector<uchar> status;
         vector<float> err;
         if (hasPrediction) {
             cur_pts = predict_pts;
+            // vector<cv::Point2f> prev_pts, cur_pts, cur_right_pts;
             cv::calcOpticalFlowPyrLK(
                 prev_img, cur_img, prev_pts, cur_pts, status, err,
                 cv::Size(21, 21), 1,
@@ -124,9 +127,10 @@ FeatureTracker::trackImage(double _cur_time,
             if (succ_num < 10)
                 cv::calcOpticalFlowPyrLK(prev_img, cur_img, prev_pts, cur_pts,
                                          status, err, cv::Size(21, 21), 3);
-        } else
+        } else {
             cv::calcOpticalFlowPyrLK(prev_img, cur_img, prev_pts, cur_pts,
                                      status, err, cv::Size(21, 21), 3);
+        }
         // reverse check
         if (FLOW_BACK) {
             vector<uchar> reverse_status;
@@ -166,7 +170,6 @@ FeatureTracker::trackImage(double _cur_time,
         TicToc t_m;
         setMask();
         ROS_DEBUG("set mask costs %fms", t_m.toc());
-
         ROS_DEBUG("detect feature begins");
         TicToc t_t;
         int n_max_cnt = MAX_CNT - static_cast<int>(cur_pts.size());
@@ -442,10 +445,11 @@ void FeatureTracker::drawTrack(const cv::Mat &imLeft,
                                map<int, cv::Point2f> &prevLeftPtsMap) {
     // int rows = imLeft.rows;
     int cols = imLeft.cols;
-    if (!imRight.empty() && stereo_cam)
+    if (!imRight.empty() && stereo_cam) {
         cv::hconcat(imLeft, imRight, imTrack);
-    else
+    }  else {
         imTrack = imLeft.clone();
+    }
     cv::cvtColor(imTrack, imTrack, CV_GRAY2RGB);
 
     for (size_t j = 0; j < curLeftPts.size(); j++) {

@@ -64,6 +64,7 @@ bool ProjectionOneFrameTwoCamFactor::Evaluate(double const *const *parameters,
 
     Eigen::Vector3d pts_camera_i = pts_i_td / inv_dep_i;
     Eigen::Vector3d pts_imu_i = qic * pts_camera_i + tic;
+    // 左右目的IMU坐标系下的特征点的坐标肯定是一样的啊
     Eigen::Vector3d pts_imu_j = pts_imu_i;
     Eigen::Vector3d pts_camera_j = qic2.inverse() * (pts_imu_j - tic2);
     Eigen::Map<Eigen::Vector2d> residual(residuals);

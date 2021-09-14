@@ -111,37 +111,6 @@ void Estimator::setParameter() {
     mProcess.unlock();
 }
 
-void Estimator::changeSensorType(int use_imu, int use_stereo) {
-    bool restart = false;
-    mProcess.lock();
-    if (!use_imu && !use_stereo)
-        printf("at least use two sensors! \n");
-    else {
-        if (USE_IMU != use_imu) {
-            USE_IMU = use_imu;
-            if (USE_IMU) {
-                // reuse imu; restart system
-                restart = true;
-            } else {
-                if (last_marginalization_info != nullptr)
-                    delete last_marginalization_info;
-
-                tmp_pre_integration = nullptr;
-                last_marginalization_info = nullptr;
-                last_marginalization_parameter_blocks.clear();
-            }
-        }
-
-        STEREO = use_stereo;
-        printf("use imu %d use stereo %d\n", USE_IMU, STEREO);
-    }
-    mProcess.unlock();
-    if (restart) {
-        clearState();
-        setParameter();
-    }
-}
-
 void Estimator::inputImage(double t,
                            const cv::Mat &_img,
                            const cv::Mat &_img1) {
@@ -869,7 +838,7 @@ void Estimator::double2vector() {
 }
 
 bool Estimator::failureDetection() {
-    return false;
+    // return false;
     if (f_manager.last_track_num < 2) {
         ROS_INFO(" little feature %d", f_manager.last_track_num);
         // return true;
@@ -1055,27 +1024,30 @@ void Estimator::optimization() {
     if (frame_count < WINDOW_SIZE) return;
 
     TicToc t_whole_marginalization;
+
+    // 1. 当前帧为关键帧时，MARGIN_OLD，将 marg 掉最老帧，及其看到的路标点和相关联 的 IMU 数据，将其转化为先验信息加到整体的目标函数中:
+    //     1) 把上一次先验项中的残差项(尺寸为 n)传递给当前先验项，并从中去除需要丢弃 的状态量;
+    //     2) 将滑窗内第 0 帧和第 1 帧间的 IMU 预积分因子(pre_integrations[1])放到 marginalization_info 中，即图 中上半部分中 x0 和 x1 之间的表示 IMU 约束的黄色块;
+    //     3) 挑选出第一次观测帧为第 0 帧的路标点，将对应的多组视觉观测放到 marginalization_info 中，即图 中上半部分中 x0 所看到的红色五角星的路标点;
+    //     4) marginalization_info->preMarginalize():得到每次 IMU 和视觉观测(cost_function)对 应的参数块(parameter_blocks)，雅可比矩阵(jacobians)，残差值(residuals);
+    //     5) marginalization_info->marginalize():多线程计整个先验项的参数块，雅可比矩阵和 残差值，即计算公式(3)，其中与代码对应关系为: 
     if (marginalization_flag == MARGIN_OLD) {
+        // 创建边缘化信息对象
         MarginalizationInfo *marginalization_info = new MarginalizationInfo();
         vector2double();
-
+        // 如果有上一次的边缘化信息，将该信息当做残差快传入本次边缘化信息中
         if (last_marginalization_info && last_marginalization_info->valid) {
             vector<int> drop_set;
-            for (int i = 0;
-                 i <
-                 static_cast<int>(last_marginalization_parameter_blocks.size());
-                 i++) {
+            for (int i = 0; i < static_cast<int>(last_marginalization_parameter_blocks.size()); i++) {
                 if (last_marginalization_parameter_blocks[i] == para_Pose[0] ||
-                    last_marginalization_parameter_blocks[i] ==
-                        para_SpeedBias[0])
+                    last_marginalization_parameter_blocks[i] == para_SpeedBias[0]) {
                     drop_set.push_back(i);
+                }
             }
             // construct new marginlization_factor
-            MarginalizationFactor *marginalization_factor =
-                new MarginalizationFactor(last_marginalization_info);
+            MarginalizationFactor *marginalization_factor = new MarginalizationFactor(last_marginalization_info);
             ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(
-                marginalization_factor, NULL,
-                last_marginalization_parameter_blocks, drop_set);
+                marginalization_factor, NULL, last_marginalization_parameter_blocks, drop_set);
             marginalization_info->addResidualBlockInfo(residual_block_info);
         }
 
@@ -1199,73 +1171,80 @@ void Estimator::optimization() {
         last_marginalization_info = marginalization_info;
         last_marginalization_parameter_blocks = parameter_blocks;
 
-    } else {
+    }
+    else 
+    {
+            // 2. 当前帧不是关键帧时，MARGIN_SECOND_NEW，我们将直接扔掉次新帧及它的视 觉观测边，
+            // 而不对次新帧进行 marg，因为我们认为当前帧和次新帧很相似，
+            // 也就是说当前 帧跟路标点之间的约束和次新帧与路标点的约束很接近，
+            // 直接丢弃并不会造成整个约束关系 丢失过多信息。
+            // 但是值得注意的是，我们要保留次新帧的 IMU 数据，从而保证 IMU 预积分的连贯性。 
+            // 通过以上过程先验项就构造完成了，在对滑动窗口内的状态量进行优化时，
+            // 把它与 IMU残差项和视觉残差项放在一起优化，从而得到不丢失历史信息的最新状态估计的结果。 
+        /**
+         * 当次新帧不是关键帧时，直接剪切掉次新帧和它的视觉观测边（该帧和路标点之间的关联）;
+         * 但是要保留次新帧的IMU数据，从而保证IMU预积分的连续性，这样才能积分计算出下一帧的测量值
+         * */
         if (last_marginalization_info &&
             std::count(std::begin(last_marginalization_parameter_blocks),
-                       std::end(last_marginalization_parameter_blocks),
-                       para_Pose[WINDOW_SIZE - 1])) {
-            MarginalizationInfo *marginalization_info =
-                new MarginalizationInfo();
+                       std::end(last_marginalization_parameter_blocks), para_Pose[WINDOW_SIZE - 1])) {
+            // 新创建 边缘化信息对象
+            MarginalizationInfo *marginalization_info = new MarginalizationInfo();
+            // 数据格式变换
             vector2double();
             if (last_marginalization_info && last_marginalization_info->valid) {
                 vector<int> drop_set;
-                for (int i = 0;
-                     i < static_cast<int>(
-                             last_marginalization_parameter_blocks.size());
-                     i++) {
-                    ROS_ASSERT(last_marginalization_parameter_blocks[i] !=
-                               para_SpeedBias[WINDOW_SIZE - 1]);
-                    if (last_marginalization_parameter_blocks[i] ==
-                        para_Pose[WINDOW_SIZE - 1])
+                // 遍历上一个边缘化信息块
+                for (int i = 0; i < static_cast<int>(last_marginalization_parameter_blocks.size());i++) {
+                    // 检验条件是否成功,若失败则终端程序并输出文件/行数/条件.
+                    ROS_ASSERT(last_marginalization_parameter_blocks[i] != para_SpeedBias[WINDOW_SIZE - 1]);
+                    // 仅仅记录跟 Pose 相关的块的ID号
+                    if (last_marginalization_parameter_blocks[i] == para_Pose[WINDOW_SIZE - 1]) {
                         drop_set.push_back(i);
+                    }
                 }
+                // 构造新的边缘化因子
                 // construct new marginlization_factor
-                MarginalizationFactor *marginalization_factor =
-                    new MarginalizationFactor(last_marginalization_info);
+                MarginalizationFactor *marginalization_factor = new MarginalizationFactor(last_marginalization_info);
                 ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(
-                    marginalization_factor, NULL,
-                    last_marginalization_parameter_blocks, drop_set);
-
+                    marginalization_factor, NULL, last_marginalization_parameter_blocks, drop_set);
                 marginalization_info->addResidualBlockInfo(residual_block_info);
             }
 
             TicToc t_pre_margin;
             ROS_DEBUG("begin marginalization");
+            //计算每次IMU和视觉观测(cost_function)对应的参数块(parameter_blocks),雅可比矩阵(jacobians),残差值(residuals)
             marginalization_info->preMarginalize();
             ROS_DEBUG("end pre marginalization, %f ms", t_pre_margin.toc());
-
             TicToc t_margin;
             ROS_DEBUG("begin marginalization");
+            //多线程计算整个先验项的参数块,雅可比矩阵和残差值
             marginalization_info->marginalize();
             ROS_DEBUG("end marginalization, %f ms", t_margin.toc());
 
             std::unordered_map<long, double *> addr_shift;
             for (int i = 0; i <= WINDOW_SIZE; i++) {
-                if (i == WINDOW_SIZE - 1)
+                if (i == WINDOW_SIZE - 1) {
                     continue;
-                else if (i == WINDOW_SIZE) {
-                    addr_shift[reinterpret_cast<long>(para_Pose[i])] =
-                        para_Pose[i - 1];
-                    if (USE_IMU)
-                        addr_shift[reinterpret_cast<long>(para_SpeedBias[i])] =
-                            para_SpeedBias[i - 1];
+                } else if (i == WINDOW_SIZE) {
+                    addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i - 1];
+                    if (USE_IMU) {
+                        addr_shift[reinterpret_cast<long>(para_SpeedBias[i])] = para_SpeedBias[i - 1];
+                    }
                 } else {
-                    addr_shift[reinterpret_cast<long>(para_Pose[i])] =
-                        para_Pose[i];
-                    if (USE_IMU)
-                        addr_shift[reinterpret_cast<long>(para_SpeedBias[i])] =
-                            para_SpeedBias[i];
+                    addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i];
+                    if (USE_IMU) {
+                        addr_shift[reinterpret_cast<long>(para_SpeedBias[i])] = para_SpeedBias[i];
+                    }
                 }
             }
-            for (int i = 0; i < NUM_OF_CAM; i++)
-                addr_shift[reinterpret_cast<long>(para_Ex_Pose[i])] =
-                    para_Ex_Pose[i];
-
+            for (int i = 0; i < NUM_OF_CAM; i++) {
+                addr_shift[reinterpret_cast<long>(para_Ex_Pose[i])] = para_Ex_Pose[i];
+            }
             addr_shift[reinterpret_cast<long>(para_Td[0])] = para_Td[0];
 
-            vector<double *> parameter_blocks =
-                marginalization_info->getParameterBlocks(addr_shift);
-            if (last_marginalization_info) delete last_marginalization_info;
+            vector<double *> parameter_blocks = marginalization_info->getParameterBlocks(addr_shift);
+            if (last_marginalization_info) {delete last_marginalization_info;}
             last_marginalization_info = marginalization_info;
             last_marginalization_parameter_blocks = parameter_blocks;
         }
