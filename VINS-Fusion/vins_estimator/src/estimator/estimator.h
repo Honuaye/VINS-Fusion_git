@@ -230,8 +230,6 @@ class Estimator {
 
     int loop_window_index;
 
-    // vector<double *> last_marginalization_parameter_blocks;
-
     map<double, ImageFrame> all_image_frame;
     IntegrationBase *tmp_pre_integration;
 
@@ -248,6 +246,8 @@ class Estimator {
 
     // GTSAM
     // Data:
+    using StereoMeasurement = std::pair<LandmarkId, gtsam::StereoPoint2>;
+    using StereoMeasurements = std::vector<StereoMeasurement>;
     // TODO grows unbounded currently, but it should be limited to time horizon.
     FeatureTracks feature_tracks_;
     BackendParams backend_params_;
@@ -285,6 +285,11 @@ class Estimator {
     std::unordered_map<LandmarkId, gtsam::Point3> getMapLmkIdsTo3dPointsInTimeHorizon(
         const gtsam::NonlinearFactorGraph& graph,
         const size_t& min_age);
+
+
+    void getStereoSmartMeasurements(
+        const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image,
+        StereoMeasurements* smart_stereo_measurements);
  protected:
     bool optimize(const Timestamp &timestamp_kf_sec,
                   const FrameId &cur_id,
@@ -325,7 +330,6 @@ class Estimator {
 
     void setIsam2Params(const BackendParams &vio_params,
                         gtsam::ISAM2Params *isam_param) {
-        // iSAM2 SETTINGS
         if (vio_params.useDogLeg_) {
             gtsam::ISAM2DoglegParams dogleg_params;
             dogleg_params.wildfireThreshold = vio_params.wildfire_threshold_;
@@ -384,12 +388,9 @@ class Estimator {
             //         findUnusedFactorSlots(false) {}
     }
 
-    using StereoMeasurement = std::pair<LandmarkId, gtsam::StereoPoint2>;
-    using StereoMeasurements = std::vector<StereoMeasurement>;
     bool addVisualInertialStateAndOptimize(
         const Timestamp &timestamp_kf_sec,
         const StereoMeasurements &status_smart_stereo_measurements_kf,
-        // const gtsam::PreintegrationType &pim,
         const std::shared_ptr<gtsam::PreintegratedImuMeasurements> &pim,
         boost::optional<gtsam::Pose3> stereo_ransac_body_pose = boost::none);
 
@@ -407,8 +408,7 @@ class Estimator {
                           const FrameId &to_id,
                           const gtsam::Pose3 &from_id_POSE_to_id);
 
-    // Store stereo frame info into landmarks table:
-    // returns landmarks observed in current frame.
+    // Store stereo frame info into landmarks table: returns landmarks observed in current frame.
     void addStereoMeasurementsToFeatureTracks(
         const int &curr_kf_id,
         const StereoMeasurements &stereoMeasurements_kf,
@@ -470,20 +470,16 @@ class Estimator {
         std::vector<size_t>* slots_of_factors_with_key);
     /********* cleanCheiralityLmk *********/
 
-
     // State estimates.
-    // TODO(Toni): bundle these in a VioNavStateTimestamped.
     bool keyframe_;
     Timestamp timestamp_lkf_;
     ImuBias imu_bias_lkf_;  //!< Most recent bias estimate..
-    gtsam::Vector3
-        W_Vel_B_lkf_;  //!< Velocity of body at k-1 in world coordinates
+    gtsam::Vector3 W_Vel_B_lkf_;  //!< Velocity of body at k-1 in world coordinates
     gtsam::Pose3 W_Pose_B_lkf_;  //!< Body pose at at k-1 in world coordinates.
     ImuBias imu_bias_prev_kf_;   //!< bias estimate at previous keyframe
 
     // State covariance. (initialize to zero)
     gtsam::Matrix state_covariance_lkf_ = Eigen::MatrixXd::Zero(15, 15);
-
     // Vision params.
     gtsam::SmartStereoProjectionParams smart_factors_params_;
     gtsam::SharedNoiseModel smart_noise_;
@@ -494,14 +490,9 @@ class Estimator {
     gtsam::Cal3_S2Stereo::shared_ptr stereo_calibration_ = nullptr;
 
     // State.
-    //!< current state of the system.
     gtsam::Values state_;
-
-    // ISAM2 smoother
     std::unique_ptr<Smoother> smoother_;
-
     // Values
-    //!< new states to be added
     gtsam::Values new_values_;
 
     // Factors.
@@ -512,15 +503,13 @@ class Estimator {
     //!< landmarkId -> {SmartFactorPtr, SlotIndex}
     SmartFactorMap old_smart_factors_;
     std::map<LandmarkId, bool> feature_flag_;
-    // if SlotIndex is -1, means that the factor has not been inserted yet in
-    // the graph
+    // if SlotIndex is -1, means that the factor has not been inserted yet in the graph
 
     // Counters.
     //! Last keyframe id.
     int last_kf_id_;
     //! Current keyframe id.
     int curr_kf_id_;
-
     std::map<int, int64_t> id_time_map_;
     std::map<int64_t, int> time_id_map_;
 
@@ -529,10 +518,8 @@ class Estimator {
     gtsam::SharedNoiseModel zero_velocity_prior_noise_;
     gtsam::SharedNoiseModel no_motion_prior_noise_;
     gtsam::SharedNoiseModel constant_velocity_prior_noise_;
-
     //! Landmark count.
     int landmark_count_;
-
     //! Number of Cheirality exceptions
     bool save_first_data_ = true;
     size_t counter_of_exceptions_ = 0;

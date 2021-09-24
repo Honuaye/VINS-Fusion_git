@@ -233,7 +233,6 @@ void Estimator::clearState() {
 
     if (tmp_pre_integration != nullptr) delete tmp_pre_integration;
     tmp_pre_integration = nullptr;
-    // last_marginalization_parameter_blocks.clear();
     f_manager.clearState();
     failure_occur = 0;
     mProcess.unlock();
@@ -386,9 +385,9 @@ void Estimator::setParameter() {
                 size++;
             }
         }
-        for(auto it : gt_ba_){
-            cout<<it.first<<", "<<it.second.transpose()<<endl;
-        }
+        // for(auto it : gt_ba_){
+        //     cout<<it.first<<", "<<it.second.transpose()<<endl;
+        // }
         // set save
         std::string horizon_string = std::to_string(u_int(backend_params_.horizon_));
         std::string save_path = MY_OUTPUT_FOLDER + "gtsam_h"+horizon_string+"_";
@@ -587,7 +586,10 @@ void Estimator::processMeasurements() {
             }
             mProcess.lock();
             CHECK(keyframe_pim_);
+            TicToc processImageGtsam_time;
             processImageGtsam(feature.second, feature.first, keyframe_pim_);
+            auto gtsam_time = processImageGtsam_time.toc();
+            TicToc other_time;
             prevTime = curTime;
             printStatistics(*this, 0);
             std_msgs::Header header;
@@ -602,7 +604,12 @@ void Estimator::processMeasurements() {
             }
             pubKeyframe(*this);
             pubTF(*this, header);
-            if(solver_flag == NON_LINEAR)
+            std::cout
+                << "  processImageGtsam_time : " << gtsam_time
+                << "  other_time : " << other_time.toc()
+                << "  total estimate_time : " << estimator_time.toc()
+                <<std::endl;
+            if(0)
             {
                 {
                     Eigen::Matrix4d Tw0;
@@ -802,18 +809,11 @@ bool Estimator::failureDetection() {
     double delta_angle;
     delta_angle = acos(delta_Q.w()) * 2.0 / 3.14 * 180.0;
     if (delta_angle > 50) {
-        // ROS_INFO(" big delta_angle ");
-        // static int num = 0;
-        // num++;
-        // if(num > 4) {
-        //     return true;
-        // }
     }
     return false;
 }
 
 void Estimator::slideWindow() {
-    TicToc t_margin;
     double t_0 = Headers[0];
     back_R0 = Rs[0];
     back_P0 = Ps[0];
@@ -859,17 +859,12 @@ void Estimator::slideWindow() {
             }
             all_image_frame.erase(all_image_frame.begin(), it_0);
         }
-        slideWindowOld();
+        f_manager.removeBack();
+        // slideWindowOld();
     }
 }
 
 void Estimator::slideWindowOld() {
-    sum_of_back++;
-    bool shift_depth = solver_flag == NON_LINEAR ? true : false;
-    if(shift_depth) {
-        return;
-    }
-    f_manager.removeBack();
 }
 
 void Estimator::slideWindowNew() {
@@ -998,8 +993,8 @@ void Estimator::processImageGtsam(
     ImageFrame imageframe(image, header);
     imageframe.pre_integration = tmp_pre_integration;
     all_image_frame.insert(make_pair(header, imageframe));
-    tmp_pre_integration = new IntegrationBase{
-        acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
+    tmp_pre_integration = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
+
     if (solver_flag == INITIAL) {
         if (STEREO && USE_IMU) {
             f_manager.initFramePoseByPnP(frame_count, Ps, Rs, tic, ric);
@@ -1028,7 +1023,6 @@ void Estimator::processImageGtsam(
                     // gyroscope bias initial calibration -0.0025655  0.0285788  0.0844428
                     // VINS master: gyroscope bias initial calibration -0.00257274    0.020599   0.0823816
                 // 400 : 
-                    // -0.00180214   0.0290869   0.0838947
                     // -0.00180214   0.0290869   0.0838947  (需要跟提取特征点阈值有关)
                     // gyroscope bias initial calibration -0.00180214   0.0290869   0.0838947  
                 ImuBias imu_bias_guess(Bas[frame_count], Bgs[frame_count]);
@@ -1061,107 +1055,32 @@ void Estimator::processImageGtsam(
         ++curr_kf_id_;
         TicToc t_solve;
         bool is_smoother_ok;
+        // step one: get smart stereo measurements
         StereoMeasurements smart_stereo_measurements;
-        smart_stereo_measurements.reserve(image.size());
-        std::vector<cv::Point2f> left_pts, right_pts;
-        std::vector<cv::Point2f> left_pts_rectified, right_pts_rectified;
-        int good = 0;
-        int average = 0;
-        int bad = 0;
-        int total = 0;
-        for (auto &id_pts : image) {
-            LandmarkId landmark_id = id_pts.first;
-            double u_l = std::numeric_limits<double>::quiet_NaN();
-            double v_l = std::numeric_limits<double>::quiet_NaN();
-            double u_r = std::numeric_limits<double>::quiet_NaN();
-            double v_r = std::numeric_limits<double>::quiet_NaN();
-            if (id_pts.second.size() < 0) {
-                continue;
-            } else if (id_pts.second.size() == 1) {
-            } else if (id_pts.second.size() == 2) {
-                assert(id_pts.second[0].first == 0);
-                assert(id_pts.second[1].first == 1);
-                u_l = (id_pts.second[0].second)(3);
-                v_l = (id_pts.second[0].second)(4);
-                u_r = (id_pts.second[1].second)(3);
-                v_r = (id_pts.second[1].second)(4);
-                if(
-                    std::isnan(u_l) || std::isnan(v_l) ||
-                    std::isnan(u_r) || std::isnan(v_r) ||
-                    std::isinf(u_l) || std::isinf(u_r) ||
-                    std::isinf(v_l) || std::isinf(v_r)) {
-                    continue;
-                }
-                cv::Point2f undistor_normalized_left_point =
-                    cv::Point2f((id_pts.second[0].second)(0), (id_pts.second[0].second)(1));
-                cv::Point2f undistor_normalized_right_point =
-                    cv::Point2f((id_pts.second[1].second)(0), (id_pts.second[1].second)(1));
-                cv::Point2f target_1, target_2;
-                Eigen::Vector3d p0(undistor_normalized_left_point.x, undistor_normalized_left_point.y, 1);
-                Eigen::Vector3d p1(undistor_normalized_right_point.x, undistor_normalized_right_point.y, 1);
-                Eigen::Matrix3d Rc0c = stereo_camera_->camL_Pose_camLrect_.rotation().matrix(); // R1
-                Eigen::Matrix3d Rc1c = stereo_camera_->camR_Pose_camRrect_.rotation().matrix(); // R2
-                auto tmp0 = Rc0c.transpose() * p0;
-                auto tmp1 = Rc1c.transpose() * p1;
-                cv::Point2f p00(tmp0(0) / tmp0(2), tmp0(1) / tmp0(2));
-                cv::Point2f p11(tmp1(0) / tmp1(2), tmp1(1) / tmp1(2));
-                Eigen::Matrix3d K_ = stereo_calibration_->K().matrix();
-                Utility::Normalized2Pixel(p00, &target_1, K_);
-                Utility::Normalized2Pixel(p11, &target_2, K_);
-                auto gap = abs(target_1.y - target_2.y);
-                if(gap < 2) {
-                    good++;
-                    smart_stereo_measurements.push_back(
-                        std::make_pair(landmark_id, gtsam::StereoPoint2(target_1.x, target_2.x, target_1.y)));
-                } else if(gap < 10) {
-                    average++;
-                } else {
-                    bad++;
-                }
-                total++;
-                // cv::Point2f tmp_l, tmp_r;
-                // Utility::Normalized2Pixel(undistor_normalized_left_point, &tmp_l, left_K_);
-                // Utility::Normalized2Pixel(undistor_normalized_right_point, &tmp_r, right_K_);
-                // cv::Point2f tmp_normal_l, tmp_normal_r;
-                // Utility::Pixel2Normalized(tmp_l, &tmp_normal_l, K_);
-                // Utility::Pixel2Normalized(tmp_r, &tmp_normal_r, K_);
-                // cout<<"("<<u_l<<","<<v_l<<", "<<u_r<<","<<v_r<<") ";
-                // cout<<"tmp_l("<<tmp_l.x<<","<<tmp_l.y<<", "<<tmp_r.x<<","<<tmp_r.y<<") ";
-                // cout<<"target("<<target_1.x<<","<<target_1.y<<", "<<target_2.x<<","<<target_2.y<<") ";
-                // cout<<"p0("<<p0(0)<<","<<p0(1)<<", "<<p1(0)<<","<<p1(1)<<") ";
-                // cout<<"p00("<<p00.x<<","<<p00.y<<", "<<p11.x<<","<<p11.y<<") ";
-                // cout<<endl;
-            }
-        }
-        cout<<"(good:"<<good<<", average:"<<average<<", bad:"<<bad<<"; total:"<<total<<endl;
+        getStereoSmartMeasurements(image, &smart_stereo_measurements);
+        // step two: get pose_frome_last_frame
         Eigen::Matrix4d cur_T, prev_T, Tij;
         getPoseInWorldFrame(cur_T);
         getPoseInWorldFrame(frame_count - 1, prev_T);
         Tij = prev_T.inverse() * cur_T;
         boost::optional<gtsam::Pose3> pose_frome_last_frame(Tij);
         id_time_map_[curr_kf_id_] = curTime;
-        time_id_map_[curTime] = curr_kf_id_;
-        cout<<"addVisualInertial StateAndOptimize start:  "<<curr_kf_id_<<endl;
         TicToc t_gtsam_op;
         is_smoother_ok = addVisualInertialStateAndOptimize(
             int64_t(curTime), smart_stereo_measurements, pim, pose_frome_last_frame);
         if(is_smoother_ok) {
             updateStates(curr_kf_id_);
-            printData();
             Eigen::Matrix4d new_T;
             getPoseInWorldFrame(new_T);
             if(curr_kf_id_ > 15) {
                 motion_model_ = prev_T.inverse() * new_T;
             }
-            if (1) {
-                // Generate this map only if requested, since costly.
-                // Also, if lmk type requested, fill lmk id to lmk type object.
-                // WARNING this also cleans the lmks inside the old_smart_factors map!
+            // if (1) {
+            if (0) {
                 TicToc get_3dpoint;
                 size_t kMinLmkObs = 2;
                 lmk_ids_to_3d_points_in_time_horizon_ =
-                    getMapLmkIdsTo3dPointsInTimeHorizon(
-                        smoother_->getFactors(), kMinLmkObs);
+                    getMapLmkIdsTo3dPointsInTimeHorizon(smoother_->getFactors(), kMinLmkObs);
                 cout<<"get_3dpoint : "<<get_3dpoint.toc()<<";  point3.size()="
                     <<lmk_ids_to_3d_points_in_time_horizon_.size()<<endl;
             }
@@ -1169,11 +1088,17 @@ void Estimator::processImageGtsam(
             cout<<"faile to optimization, in id: "<<curr_kf_id_<<endl;
             assert(0);
         }
-        static int gtsam_opt_index = 0;
-        save_gtsam_op_times_ <<gtsam_opt_index<<","<< t_gtsam_op.toc()<<endl;
-        cout << "gtsam_opt_index: " << gtsam_opt_index<<" [t_gtsam_op time: "<<t_gtsam_op.toc()<< ", t_solve time: "<<t_solve.toc()<<"]"<<std::endl;
-        cout<<"addVisualInertial StateAndOptimize end:  "<<curr_kf_id_<<endl;
-        gtsam_opt_index++;
+
+        {
+            static int gtsam_opt_index = 0;
+            save_gtsam_op_times_ <<gtsam_opt_index<<","<< t_gtsam_op.toc()<<endl;
+            cout
+                <<"curr_kf_id_:  "<<curr_kf_id_
+                << ";  gtsam_opt_index: " << gtsam_opt_index<<" [t_gtsam_op time: "<<t_gtsam_op.toc()<< ", t_solve time: "<<t_solve.toc()<<"]"<<std::endl;
+            cout<<"addVisualInertial StateAndOptimize end:  "<<curr_kf_id_<<endl;
+            gtsam_opt_index++;
+        }
+
         if (failureDetection()) {
             ROS_WARN("failure detection!");
             failure_occur = 1;
@@ -1188,19 +1113,78 @@ void Estimator::processImageGtsam(
         last_R0 = Rs[0];
         last_P0 = Ps[0];
         updateLatestStates();
-        int64_t target_t = ceil(curTime) - backend_params_.horizon_;
-        for(auto iter = time_id_map_.begin(), iter_next = time_id_map_.begin();
-            iter != time_id_map_.end();
-            iter = iter_next) {
-            if(iter->first < target_t) {
-                time_id_map_.erase(iter);
-            }
-            iter_next++;
-        }
-        auto iit = time_id_map_.begin();
-        cout<<iit->first<<", "<<iit->second<<endl;
-        cout<<endl;
     }
+}
+
+void Estimator::getStereoSmartMeasurements(
+    const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image,
+    StereoMeasurements* smart_stereo_measurements) {
+    if(nullptr == smart_stereo_measurements  || image.size() < 1) {
+
+        return;
+    }
+    smart_stereo_measurements->reserve(image.size());
+    std::vector<cv::Point2f> left_pts, right_pts;
+    std::vector<cv::Point2f> left_pts_rectified, right_pts_rectified;
+    int good = 0;
+    int average = 0;
+    int bad = 0;
+    int total = 0;
+    for (auto &id_pts : image) {
+        LandmarkId landmark_id = id_pts.first;
+        double u_l = std::numeric_limits<double>::quiet_NaN();
+        double v_l = std::numeric_limits<double>::quiet_NaN();
+        double u_r = std::numeric_limits<double>::quiet_NaN();
+        double v_r = std::numeric_limits<double>::quiet_NaN();
+        if (id_pts.second.size() < 0) {
+            continue;
+        } else if (id_pts.second.size() == 1) {
+        } else if (id_pts.second.size() == 2) {
+            assert(id_pts.second[0].first == 0);
+            assert(id_pts.second[1].first == 1);
+            u_l = (id_pts.second[0].second)(3);
+            v_l = (id_pts.second[0].second)(4);
+            u_r = (id_pts.second[1].second)(3);
+            v_r = (id_pts.second[1].second)(4);
+            if(
+                std::isnan(u_l) || std::isnan(v_l) ||
+                std::isnan(u_r) || std::isnan(v_r) ||
+                std::isinf(u_l) || std::isinf(u_r) ||
+                std::isinf(v_l) || std::isinf(v_r)) {
+                continue;
+            }
+            cv::Point2f undistor_normalized_left_point =
+                cv::Point2f((id_pts.second[0].second)(0), (id_pts.second[0].second)(1));
+            cv::Point2f undistor_normalized_right_point =
+                cv::Point2f((id_pts.second[1].second)(0), (id_pts.second[1].second)(1));
+            cv::Point2f target_1, target_2;
+            Eigen::Vector3d p0(undistor_normalized_left_point.x, undistor_normalized_left_point.y, 1);
+            Eigen::Vector3d p1(undistor_normalized_right_point.x, undistor_normalized_right_point.y, 1);
+            Eigen::Matrix3d Rc0c = stereo_camera_->camL_Pose_camLrect_.rotation().matrix(); // R1
+            Eigen::Matrix3d Rc1c = stereo_camera_->camR_Pose_camRrect_.rotation().matrix(); // R2
+            auto tmp0 = Rc0c.transpose() * p0;
+            auto tmp1 = Rc1c.transpose() * p1;
+            cv::Point2f p00(tmp0(0) / tmp0(2), tmp0(1) / tmp0(2));
+            cv::Point2f p11(tmp1(0) / tmp1(2), tmp1(1) / tmp1(2));
+            Eigen::Matrix3d K_ = stereo_calibration_->matrix();
+            // std::cout<<"K_ \n"<<K_<<std::endl;
+            Utility::Normalized2Pixel(p00, &target_1, K_);
+            Utility::Normalized2Pixel(p11, &target_2, K_);
+            auto gap = abs(target_1.y - target_2.y);
+            if(gap < 2) {
+                good++;
+                smart_stereo_measurements->push_back(
+                    std::make_pair(landmark_id, gtsam::StereoPoint2(target_1.x, target_2.x, target_1.y)));
+            } else if(gap < 10) {
+                average++;
+            } else {
+                bad++;
+            }
+            total++;
+        }
+    }
+    cout<<"(good:"<<good<<", average:"<<average<<", bad:"<<bad<<"; total:"<<total<<endl;
+
 }
 
 void Estimator::addInitialPriorFactors(const FrameId &frame_id) {
@@ -1309,7 +1293,7 @@ bool Estimator::addVisualInertialStateAndOptimize(
     LandmarkIds landmarks_kf;
     addStereoMeasurementsToFeatureTracks(
         curr_kf_id_, status_smart_stereo_measurements_kf, &landmarks_kf);
-    if (!keyframe_) {
+    if (0) {
         addZeroVelocityPrior(curr_kf_id_);
         addNoMotionFactor(last_kf_id_, curr_kf_id_);
     } else {
@@ -1336,15 +1320,6 @@ void Estimator::addImuFactor(
     const FrameId &from_id,
     const FrameId &to_id,
     const std::shared_ptr<gtsam::PreintegratedImuMeasurements> &pim) {
-    // new_imu_prior_and_other_factors_.push_back(
-    //     boost::make_shared<gtsam::CombinedImuFactor>(
-    //         gtsam::Symbol(kPoseSymbolChar, from_id),
-    //         gtsam::Symbol(kVelocitySymbolChar, from_id),
-    //         gtsam::Symbol(kPoseSymbolChar, to_id),
-    //         gtsam::Symbol(kVelocitySymbolChar, to_id),
-    //         gtsam::Symbol(kImuBiasSymbolChar, from_id),
-    //         gtsam::Symbol(kImuBiasSymbolChar, to_id), *pim));
-
     new_imu_prior_and_other_factors_.push_back(
         boost::make_shared<gtsam::ImuFactor>(
             gtsam::Symbol(kPoseSymbolChar, from_id),
@@ -1512,8 +1487,7 @@ bool Estimator::optimize(
     size_t new_smart_factors_size = new_smart_factors_.size();
     gtsam::FactorIndices delete_slots = extra_factor_slots_to_delete;
     gtsam::NonlinearFactorGraph new_factors_tmp;
-    new_factors_tmp.reserve(new_smart_factors_size +
-                            new_imu_prior_and_other_factors_.size());
+    new_factors_tmp.reserve(new_smart_factors_size + new_imu_prior_and_other_factors_.size());
     std::map<gtsam::FactorIndex, LandmarkId> newFactor2lm;
     int index = 0;
     for (const auto &new_smart_factor : new_smart_factors_) {
@@ -1541,38 +1515,32 @@ bool Estimator::optimize(
     new_factors_tmp.push_back(new_imu_prior_and_other_factors_.begin(),
                               new_imu_prior_and_other_factors_.end());
     std::map<Key, double> timestamps;
-    BOOST_FOREACH (const gtsam::Values::ConstKeyValuePair &key_value,
-                   new_values_) {
-        timestamps[key_value.key] =
-            timestamp_kf_sec;
+    BOOST_FOREACH (const gtsam::Values::ConstKeyValuePair &key_value, new_values_) {
+        timestamps[key_value.key] = timestamp_kf_sec;
     }
     DCHECK_EQ(timestamps.size(), new_values_.size());
     Smoother::Result result;
     TicToc updateSmoother_1;
-    bool is_smoother_ok = updateSmoother(&result, new_factors_tmp, new_values_,
-                                         timestamps, delete_slots);
+    bool is_smoother_ok = updateSmoother(&result, new_factors_tmp, new_values_, timestamps, delete_slots);
     printf("update Smoother time: %f\n", updateSmoother_1.toc());
     new_smart_factors_.clear();
     new_imu_prior_and_other_factors_.resize(0);
     new_values_.clear();
+
+    cout
+        <<"smoother_->getISAM2Result().newFactorsIndices.size()="<<smoother_->getISAM2Result().newFactorsIndices.size()
+        <<", newFactor2lm.size()="<<newFactor2lm.size()
+        <<endl;
     // updateNewSmartFactorsSlots()
-    cout<<"smoother_->getISAM2Result().newFactorsIndices.size()="<<smoother_->getISAM2Result().newFactorsIndices.size()
-    <<", newFactor2lm.size()="<<newFactor2lm.size()<<endl;
     // cout<<"(";
     for (const auto &f2l : newFactor2lm) {
         const auto &it = old_smart_factors_.find(f2l.second);
-        if(it == old_smart_factors_.end()) {
-            continue;
-        }
-        // cout<<"("<<f2l.first;
+        if(it == old_smart_factors_.end()) {continue;}
         auto slot = smoother_->getISAM2Result().newFactorsIndices.at(f2l.first);
         it->second.second = slot;
+        it->second.first = boost::dynamic_pointer_cast<SmartStereoFactor>(smoother_->getFactors().at(slot));
+        // cout<<"("<<f2l.first;
         // cout<<", "<<(uint64_t)slot<<") ";
-        it->second.first = boost::dynamic_pointer_cast<SmartStereoFactor>(
-                    smoother_->getFactors().at(slot));
-        boost::shared_ptr<SmartStereoFactor> gsf =
-            boost::dynamic_pointer_cast<SmartStereoFactor>(smoother_->getFactors().at(slot));
-
     }
     // cout<<")"<<endl;
     cout<<"optimize_T: "<<optimize_T.toc()<<endl;
@@ -1588,8 +1556,7 @@ bool Estimator::updateSmoother(Smoother::Result *result,
     bool got_cheirality_exception = false;
     gtsam::Symbol lmk_symbol_cheirality;
     try {
-        *result = smoother_->update(new_factors, new_values, timestamps,
-                                    delete_slots);
+        *result = smoother_->update(new_factors, new_values, timestamps, delete_slots);
     }
     catch (const gtsam::IndeterminantLinearSystemException& e) {
         printf(" IndeterminantLinearSystemException \n");
@@ -2041,8 +2008,7 @@ void Estimator::findSlotsOfFactorsWithKey(
   }
 }
 
-// Get valid 3D points and corresponding lmk id.
-// Warning! it modifies old_smart_factors_!!
+// Get valid 3D points and corresponding lmk id. Warning! it modifies old_smart_factors_!!
 std::unordered_map<LandmarkId, gtsam::Point3> Estimator::getMapLmkIdsTo3dPointsInTimeHorizon(
     const gtsam::NonlinearFactorGraph& graph,
     const size_t& min_age) {
