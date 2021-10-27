@@ -137,6 +137,8 @@ CameraFactory::generateCameraFromYamlFile( const std::string& filename )
 
     switch ( modelType )
     {
+        
+        // 等距相机模型 (TODO)
         case Camera::KANNALA_BRANDT:
         {
             EquidistantCameraPtr camera( new EquidistantCamera );
@@ -146,6 +148,7 @@ CameraFactory::generateCameraFromYamlFile( const std::string& filename )
             camera->setParameters( params );
             return camera;
         }
+        // 常用针孔相机模型 (OK)
         case Camera::PINHOLE:
         {
             PinholeCameraPtr camera( new PinholeCamera );
@@ -155,6 +158,7 @@ CameraFactory::generateCameraFromYamlFile( const std::string& filename )
             camera->setParameters( params );
             return camera;
         }
+        // 目前理解是：考虑更多维畸变系数的针孔相机模型 (OK)
         case Camera::PINHOLE_FULL:
         {
             PinholeFullCameraPtr camera( new PinholeFullCamera );
@@ -164,6 +168,7 @@ CameraFactory::generateCameraFromYamlFile( const std::string& filename )
             camera->setParameters( params );
             return camera;
         }
+        // 全景相机 (忽略先)
         case Camera::SCARAMUZZA:
         {
             OCAMCameraPtr camera( new OCAMCamera );
@@ -173,6 +178,8 @@ CameraFactory::generateCameraFromYamlFile( const std::string& filename )
             camera->setParameters( params );
             return camera;
         }
+        // 更加通用的相机模型 (TODO)
+            // Omni + Radtan
         case Camera::MEI:
         default:
         {
@@ -183,6 +190,7 @@ CameraFactory::generateCameraFromYamlFile( const std::string& filename )
             camera->setParameters( params );
             return camera;
         }
+
     }
 
     return CameraPtr( );

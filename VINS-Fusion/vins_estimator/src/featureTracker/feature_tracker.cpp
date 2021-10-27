@@ -387,9 +387,14 @@ void FeatureTracker::showUndistortion(const string &name) {
 vector<cv::Point2f> FeatureTracker::undistortedPts(vector<cv::Point2f> &pts,
                                                    camodocal::CameraPtr cam) {
     vector<cv::Point2f> un_pts;
+    // pts : 原汁原味的像素坐标
     for (unsigned int i = 0; i < pts.size(); i++) {
         Eigen::Vector2d a(pts[i].x, pts[i].y);
         Eigen::Vector3d b;
+        // 实现功能： 原像素坐标 -> 相机坐标系下的去畸变后的归一化坐标
+        // 步骤:
+            // 1. 原像素坐标 -> 未去畸变的归一化坐标
+            // 2. 未去畸变的归一化坐标 -> 去畸变后的归一化坐标
         cam->liftProjective(a, b);
         un_pts.push_back(cv::Point2f(b.x() / b.z(), b.y() / b.z()));
     }

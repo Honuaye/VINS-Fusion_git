@@ -454,11 +454,13 @@ PinholeCamera::liftProjective(const Eigen::Vector2d& p, Eigen::Vector3d& P) cons
     //double lambda;
 
     // Lift points to normalised plane
+    // 像素坐标 -> 归一化坐标
     mx_d = m_inv_K11 * p(0) + m_inv_K13;
     my_d = m_inv_K22 * p(1) + m_inv_K23;
 
     if (m_noDistortion)
     {
+        // 如果没有畸变
         mx_u = mx_d;
         my_u = my_d;
     }
@@ -541,7 +543,7 @@ PinholeCamera::spaceToPlane(const Eigen::Vector3d& P, Eigen::Vector2d& p) const
          mParameters.fy() * p_d(1) + mParameters.cy();
 }
 
-#if 0
+#if 1
 /**
  * \brief Project a 3D point to the image plane and calculate Jacobian
  *
@@ -558,17 +560,19 @@ PinholeCamera::spaceToPlane(const Eigen::Vector3d& P, Eigen::Vector2d& p,
 
     norm = P.norm();
     // Project points to the normalised plane
+    // inv_denom : 1 / Z
     inv_denom = 1.0 / P(2);
+    // 归一化坐标
     p_u << inv_denom * P(0), inv_denom * P(1);
 
     // Calculate jacobian
-    double dudx = inv_denom;
-    double dvdx = 0.0;
+    double dudx = inv_denom; // 1/Z
     double dudy = 0.0;
-    double dvdy = inv_denom;
-    inv_denom = - inv_denom * inv_denom;
-    double dudz = P(0) * inv_denom;
-    double dvdz = P(1) * inv_denom;
+    double dvdx = 0.0;
+    double dvdy = inv_denom; // 1/Z
+    inv_denom = - inv_denom * inv_denom; // -1/Z^2
+    double dudz = P(0) * inv_denom; // -x/Z^2
+    double dvdz = P(1) * inv_denom; // -y/Z^2
 
     if (m_noDistortion)
     {
@@ -603,6 +607,18 @@ PinholeCamera::spaceToPlane(const Eigen::Vector3d& P, Eigen::Vector2d& p,
     p << fx * p_d(0) + mParameters.cx(),
          fy * p_d(1) + mParameters.cy();
 
+    // J = J1 * J2
+        // J1
+            // [fx, 0;
+            //  fy, 0]
+        // J2:
+            // [1/z, 0, -x/z^2;
+            //  0, 1/z, -y/z^2]
+    // J =
+        // [
+            // fx/z, 0, -xfx/z^2
+            // 0, fy/z, -yfy/z^2
+        // ]
     J << dudx, dudy, dudz,
          dvdx, dvdy, dvdz;
 }

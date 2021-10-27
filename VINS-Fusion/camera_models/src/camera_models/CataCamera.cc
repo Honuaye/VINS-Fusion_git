@@ -658,7 +658,7 @@ CataCamera::spaceToPlane(const Eigen::Vector3d& P, Eigen::Vector2d& p) const
          mParameters.gamma2() * p_d(1) + mParameters.v0();
 }
 
-#if 0
+#if 1
 /** 
  * \brief Project a 3D point to the image plane and calculate Jacobian
  *
@@ -690,21 +690,8 @@ CataCamera::spaceToPlane(const Eigen::Vector3d& P, Eigen::Vector2d& p,
     double dudz = P(0) * inv_denom;
     double dvdz = P(1) * inv_denom;
 
-    if (m_noDistortion)
-    {
-        p_d = p_u;
-    }
-    else
-    {
-        // Apply distortion
-        Eigen::Vector2d d_u;
-        distortion(p_u, d_u);
-        p_d = p_u + d_u;
-    }
-
     double gamma1 = mParameters.gamma1();
     double gamma2 = mParameters.gamma2();
-
     // Make the product of the jacobians
     // and add projection matrix jacobian
     inv_denom = gamma1 * (dudx * dxdmx + dvdx * dxdmy); // reuse
@@ -718,13 +705,24 @@ CataCamera::spaceToPlane(const Eigen::Vector3d& P, Eigen::Vector2d& p,
     inv_denom = gamma1 * (dudz * dxdmx + dvdz * dxdmy); // reuse
     dvdz = gamma2 * (dudz * dydmx + dvdz * dydmy);
     dudz = inv_denom;
-    
+    J << dudx, dudy, dudz,
+         dvdx, dvdy, dvdz;
+
+    if (m_noDistortion)
+    {
+        p_d = p_u;
+    }
+    else
+    {
+        // Apply distortion
+        Eigen::Vector2d d_u;
+        distortion(p_u, d_u);
+        p_d = p_u + d_u;
+    }
     // Apply generalised projection matrix
     p << gamma1 * p_d(0) + mParameters.u0(),
          gamma2 * p_d(1) + mParameters.v0();
 
-    J << dudx, dudy, dudz,
-         dvdx, dvdy, dvdz;
 }
 #endif
 

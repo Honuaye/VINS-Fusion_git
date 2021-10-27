@@ -55,6 +55,10 @@ class OCAMCamera : public Camera {
                                         const Parameters& params);
 
      private:
+
+
+        // #define SCARAMUZZA_POLY_SIZE 5
+        // #define SCARAMUZZA_INV_POLY_SIZE 20
         double m_poly[SCARAMUZZA_POLY_SIZE];
         double m_inv_poly[SCARAMUZZA_INV_POLY_SIZE];
         double m_C;
