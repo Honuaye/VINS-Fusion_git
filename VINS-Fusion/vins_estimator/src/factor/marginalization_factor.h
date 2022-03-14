@@ -69,6 +69,9 @@ class MarginalizationInfo {
         std::unordered_map<long, double *> &addr_shift);
 
     std::vector<ResidualBlockInfo *> factors;
+    // m : 被边缘化的参数的个数
+    // n : 和m有共同边的需要被保留的参数的个数;
+    // m + n : 所有含有被边缘化参数的边, 这些边对应的所有的参数个数
     int m, n;
     std::unordered_map<long, int> parameter_block_size;  // global size
     int sum_block_size;
@@ -77,14 +80,17 @@ class MarginalizationInfo {
 
     std::vector<int> keep_block_size;  // global size
     std::vector<int> keep_block_idx;   // local size
+    // 边缘化时, 线性化的点 x0 (对应所有n对应的参数)
     std::vector<double *> keep_block_data;
-
+    // 边缘化, 通过 舒尔布 计算求得的对应留下来的n 的雅克比矩阵;
     Eigen::MatrixXd linearized_jacobians;
+    // 边缘化, 通过 舒尔布 计算得到的 e0;  CERES 迭代更新时候, e=e0+linearized_jacobians*dx; dx=e_new - e0;
     Eigen::VectorXd linearized_residuals;
     const double eps = 1e-8;
     bool valid;
 };
 
+// 边缘化因子, 用于传入给 CERES 做优化, 因此, 关键在 Evaluate 函数(雅克比矩阵 和 获取残差 和 状态更新???)
 class MarginalizationFactor : public ceres::CostFunction {
  public:
     MarginalizationFactor(MarginalizationInfo *_marginalization_info);

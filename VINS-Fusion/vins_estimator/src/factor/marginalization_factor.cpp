@@ -183,6 +183,7 @@ void *ThreadsConstructA(void *threadsstruct) {
 
 void MarginalizationInfo::marginalize() {
     int pos = 0;
+    // 要边缘化的参数数量
     for (auto &it : parameter_block_idx) {
         it.second = pos;
         pos += localSize(parameter_block_size[it.first]);
@@ -196,7 +197,7 @@ void MarginalizationInfo::marginalize() {
             pos += localSize(it.second);
         }
     }
-
+    // 要保留的参数数量
     n = pos - m;
     // ROS_INFO("marginalization, pos: %d, m: %d, n: %d, size: %d", pos, m, n,
     // (int)parameter_block_idx.size());
@@ -317,13 +318,6 @@ void MarginalizationInfo::marginalize() {
         S_sqrt.asDiagonal() * saes2.eigenvectors().transpose();
     linearized_residuals =
         S_inv_sqrt.asDiagonal() * saes2.eigenvectors().transpose() * b;
-    // std::cout << A << std::endl
-    //          << std::endl;
-    // std::cout << linearized_jacobians << std::endl;
-    // printf("error2: %f %f\n", (linearized_jacobians.transpose() *
-    // linearized_jacobians - A).sum(),
-    //      (linearized_jacobians.transpose() * linearized_residuals -
-    //      b).sum());
 }
 
 std::vector<double *> MarginalizationInfo::getParameterBlocks(
@@ -362,16 +356,6 @@ MarginalizationFactor::MarginalizationFactor(
 bool MarginalizationFactor::Evaluate(double const *const *parameters,
                                      double *residuals,
                                      double **jacobians) const {
-    // printf("internal addr,%d, %d\n", (int)parameter_block_sizes().size(),
-    // num_residuals());
-    // for (int i = 0; i < static_cast<int>(keep_block_size.size()); i++)
-    //{
-    //    //printf("unsigned %x\n", reinterpret_cast<unsigned
-    //    long>(parameters[i]));
-    //    //printf("signed %x\n", reinterpret_cast<long>(parameters[i]));
-    // printf("jacobian %x\n", reinterpret_cast<long>(jacobians));
-    // printf("residual %x\n", reinterpret_cast<long>(residuals));
-    //}
     int n = marginalization_info->n;
     int m = marginalization_info->m;
     Eigen::VectorXd dx(n);
