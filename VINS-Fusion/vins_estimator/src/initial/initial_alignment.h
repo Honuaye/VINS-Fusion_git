@@ -33,7 +33,9 @@ class ImageFrame {
     };
     map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> points;
     double t;
+    // 表示 R_co_bi
     Matrix3d R;
+    // 表示 P_c0ci
     Vector3d T;
     IntegrationBase *pre_integration;
     bool is_key_frame;

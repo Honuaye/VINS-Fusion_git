@@ -270,7 +270,10 @@ void Estimator::processMeasurements() {
             mBuf.unlock();
 
             if (USE_IMU) {
-                if (!initFirstPoseFlag) initFirstIMUPose(accVector);
+                // if (!initFirstPoseFlag) initFirstIMUPose(accVector);
+                if (solver_flag == INITIAL) {
+                    initFirstIMUPose(accVector);
+                }
                 for (size_t i = 0; i < accVector.size(); i++) {
                     double dt;
                     if (i == 0)
@@ -311,7 +314,7 @@ void Estimator::processMeasurements() {
 
 void Estimator::initFirstIMUPose(
     vector<pair<double, Eigen::Vector3d>> &accVector) {
-    printf("init first imu pose\n");
+    // printf("init first imu pose\n");
     initFirstPoseFlag = true;
     // return;
     Eigen::Vector3d averAcc(0, 0, 0);
@@ -320,12 +323,13 @@ void Estimator::initFirstIMUPose(
         averAcc = averAcc + accVector[i].second;
     }
     averAcc = averAcc / n;
-    printf("averge acc %f %f %f\n", averAcc.x(), averAcc.y(), averAcc.z());
+    // printf("averge acc %f %f %f\n", averAcc.x(), averAcc.y(), averAcc.z());
     Matrix3d R0 = Utility::g2R(averAcc);
     double yaw = Utility::R2ypr(R0).x();
     R0 = Utility::ypr2R(Eigen::Vector3d{-yaw, 0, 0}) * R0;
     Rs[0] = R0;
-    cout << "init R0 " << endl << Rs[0] << endl;
+    cout << "init first imu pose R0 " << endl << Utility::R2ypr(Rs[0]).transpose() << endl;
+    std::cout<<"(Rs[0] * averAcc)  = " << (Rs[0] * averAcc).transpose()<<"\n";
     // Vs[0] = Vector3d(5, 0, 0);
 }
 
@@ -428,6 +432,13 @@ void Estimator::processImage(
                     initial_timestamp = header;
                 }
                 if (result) {
+            for (size_t i = 0; i < frame_count; i++) {
+                std::cout << "i = " <<i<<"\n";
+                std::cout << "Ps = \t" << Ps[i].transpose()<<"\n";
+                std::cout << "Rs = \t" << Utility::R2ypr(Rs[i]).transpose()<<"\n";
+                std::cout << "Vs = \t" << Vs[i].transpose()<<"\n";
+            }
+
                     optimization();
                     updateLatestStates();
                     solver_flag = NON_LINEAR;
@@ -440,6 +451,13 @@ void Estimator::processImage(
 
         // stereo + IMU initilization
         if (STEREO && USE_IMU) {
+            for (size_t i = 0; i < frame_count; i++) {
+                std::cout << "i = " <<i<<"\n";
+                std::cout << "Ps = \t" << Ps[i].transpose()<<"\n";
+                std::cout << "Rs = \t" << Utility::R2ypr(Rs[i]).transpose()<<"\n";
+                std::cout << "Vs = \t" << Vs[i].transpose()<<"\n";
+            }
+            
             f_manager.initFramePoseByPnP(frame_count, Ps, Rs, tic, ric);
             f_manager.triangulate(frame_count, Ps, Rs, tic, ric);
             if (frame_count == WINDOW_SIZE) {
@@ -692,8 +710,12 @@ bool Estimator::visualInitialAlign() {
         }
     }
 
+    // 因为这里求得的 g 是在 c0 坐标系下的 g;
+    // 有个疑问， c0 坐标系是表示前面SFM选取的地L帧的那帧坐标系呢还是 第一帧图像Rs[0]呢
     Matrix3d R0 = Utility::g2R(g);
+
     double yaw = Utility::R2ypr(R0 * Rs[0]).x();
+    // R0 = R_wc0 ??? w 表示第 0 帧
     R0 = Utility::ypr2R(Eigen::Vector3d{-yaw, 0, 0}) * R0;
     g = R0 * g;
     // Matrix3d rot_diff = R0 * Rs[0].transpose();
@@ -703,6 +725,15 @@ bool Estimator::visualInitialAlign() {
         Rs[i] = rot_diff * Rs[i];
         Vs[i] = rot_diff * Vs[i];
     }
+
+    std::cout
+        <<"visualInitialAlign::END g"<<g.transpose()
+        <<"\t R0 = \n"<<R0
+        <<"\n"
+        <<"Rs[0] = "<<Utility::R2ypr(Rs[0])
+        <<"\n"
+        ;
+
     ROS_DEBUG_STREAM("g0     " << g.transpose());
     ROS_DEBUG_STREAM("my R0  " << Utility::R2ypr(Rs[0]).transpose());
 
